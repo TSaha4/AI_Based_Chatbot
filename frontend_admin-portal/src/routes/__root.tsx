@@ -8,12 +8,14 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { useState } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TopNavbar } from "@/components/top-navbar";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "@/hooks/use-theme";
 
 function NotFoundComponent() {
   return (
@@ -125,14 +127,32 @@ function RootShell({ children }: { children: ReactNode }) {
 }
 
 function RootComponent() {
+  return (
+    <ThemeProvider>
+      <RootComponentInner />
+    </ThemeProvider>
+  );
+}
+
+function RootComponentInner() {
   const { queryClient } = Route.useRouteContext();
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex min-h-screen w-full bg-background">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <TopNavbar />
+      <div
+        className="ntpc-shell-bg flex min-h-screen w-full bg-background"
+        style={{ paddingLeft: collapsed ? "72px" : "248px" }}
+      >
+        <div aria-hidden="true" className="thermal-backdrop">
+          <div className="thermal-stack thermal-stack-secondary" />
+          <div className="thermal-stack" />
+          <div className="turbine-orbit" />
+          <div className="heat-lines" />
+        </div>
+        <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopNavbar adminName="Admin" />
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>

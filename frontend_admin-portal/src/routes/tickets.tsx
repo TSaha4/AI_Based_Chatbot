@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Ticket as TicketIcon,
@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { KpiCard, PageHeader, SectionCard, StatusBadge } from "@/components/admin-ui";
+import { fetchPendingTickets, resolveTicket, BackendApiError, type TicketRecord } from "@/lib/backend-api";
 import {
   Select,
   SelectContent,
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/select";
 
 export const Route = createFileRoute("/tickets")({
-  head: () => ({ meta: [{ title: "Ticket Management — Nexus Knowledge" }] }),
+  head: () => ({ meta: [{ title: "Ticket Management - NTPC Control Center" }] }),
   component: TicketsPage,
 });
 
@@ -32,28 +33,58 @@ type Ticket = {
   id: string;
   question: string;
   priority: "Low" | "Medium" | "High" | "Critical";
-  status: "Open" | "In Progress" | "Escalated" | "Resolved";
+  status: "Pending" | "In Progress" | "Escalated" | "Resolved";
   created: string;
+  email: string | null;
   aiSummary: string;
   aiResponse: string;
   related: string[];
 };
 
-const tickets: Ticket[] = [
-  { id: "TKT-2049", question: "What is the latest FGD operating parameter range for Unit 4?", priority: "High", status: "Open", created: "2026-06-22", aiSummary: "Retrieved 3 chunks from Operations Manual v4.2, low confidence on Unit 4 specifics.", aiResponse: "Based on the Operations Manual, the FGD parameters typically range from ... However, Unit 4 specific updates from 2025 are not present in the index.", related: ["Operations Manual v4.2", "FGD SOP 2023"] },
-  { id: "TKT-2048", question: "How do I file a leave encashment request under the new policy?", priority: "Medium", status: "In Progress", created: "2026-06-22", aiSummary: "Matched HR Policy 2024 sections 4.2-4.5.", aiResponse: "Submit Form HR-LE-12 via the employee self-service portal under Leave > Encashment.", related: ["HR Policy 2024", "Self-Service Portal Guide"] },
-  { id: "TKT-2047", question: "Turbine vibration alarm thresholds for maintenance?", priority: "High", status: "Escalated", created: "2026-06-21", aiSummary: "Insufficient data — needs SME review.", aiResponse: "", related: ["Maintenance Procedures v3"] },
-  { id: "TKT-2046", question: "Coal handling emergency shutdown SOP location?", priority: "Critical", status: "Open", created: "2026-06-21", aiSummary: "Found reference in Safety Bulletin 2024-08.", aiResponse: "Refer to Safety Bulletin 2024-08, section 3.1 for the emergency shutdown sequence.", related: ["Safety Bulletin 2024-08"] },
-  { id: "TKT-2045", question: "How to register for ISO 55001 internal audit training?", priority: "Low", status: "Resolved", created: "2026-06-20", aiSummary: "Resolved via LMS link.", aiResponse: "Register through the LMS at learning.nexus/iso55001.", related: ["Compliance Training Catalog"] },
-  { id: "TKT-2044", question: "Cybersecurity incident reporting timeline?", priority: "Medium", status: "Open", created: "2026-06-20", aiSummary: "Pulled from IT Security Policy 2025.", aiResponse: "Report within 1 hour to the SOC at soc@nexus.local.", related: ["IT Security Policy 2025"] },
-];
-
 function TicketsPage() {
+  const [liveTickets, setLiveTickets] = useState<Ticket[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [priority, setPriority] = useState("all");
   const [status, setStatus] = useState("all");
-  const [selectedId, setSelectedId] = useState<string>(tickets[0].id);
-  const [draft, setDraft] = useState(tickets[0].aiResponse);
+  const tickets = liveTickets;
+
+  useEffect(() => {
+    let active = true;
+    const load = () => fetchPendingTickets(50)
+      .then((records) => {
+        if (active) {
+          setLiveTickets(records.map(mapTicketRecord));
+          setLoadError(null);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          const message =
+            err instanceof BackendApiError
+              ? err.message
+              : "Live Mongo ticket queue unavailable";
+          setLoadError(message);
+        }
+      });
+    load();
+    const id = window.setInterval(load, 10000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [draft, setDraft] = useState("");
+  const [resolving, setResolving] = useState(false);
+
+  const loadTickets = () => {
+    return fetchPendingTickets(50).then((records) => {
+      setLiveTickets(records.map(mapTicketRecord));
+      setLoadError(null);
+    });
+  };
 
   const filtered = useMemo(() => {
     return tickets.filter((t) => {
@@ -62,25 +93,55 @@ function TicketsPage() {
       if (search && !t.question.toLowerCase().includes(search.toLowerCase()) && !t.id.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [search, priority, status]);
+  }, [search, priority, status, tickets]);
 
-  const selected = tickets.find((t) => t.id === selectedId) ?? tickets[0];
+  const selected = tickets.find((t) => t.id === selectedId) ?? tickets[0] ?? null;
+  const pendingTickets = tickets.filter((t) => t.status === "Pending").length;
+  const escalatedTickets = tickets.filter((t) => t.status === "Escalated").length;
+
+  useEffect(() => {
+    if (tickets.length === 0) {
+      return;
+    }
+    const selectedTicket = tickets.find((t) => t.id === selectedId);
+    if (!selectedTicket) {
+      setSelectedId(tickets[0].id);
+      setDraft("");
+    }
+  }, [tickets, selectedId]);
 
   const onSelect = (id: string) => {
     setSelectedId(id);
     const t = tickets.find((x) => x.id === id);
-    setDraft(t?.aiResponse ?? "");
+    setDraft("");
+  };
+
+  const onResolve = async () => {
+    if (!selected || selected.status !== "Pending" || !draft.trim() || resolving) return;
+    setResolving(true);
+    try {
+      const result = await resolveTicket(selected.id, draft.trim());
+      await loadTickets();
+      toast.success("Ticket resolved", {
+        description: result.email_sent ? "User emailed and answer added to retrieval." : "Answer added to retrieval. Email skipped.",
+      });
+    } catch {
+      toast.error("Resolve failed", { description: selected.id });
+    } finally {
+      setResolving(false);
+    }
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6">
-      <PageHeader title="Ticket Management" subtitle="Triage and resolve unresolved AI queries." />
+    <div className="stagger-soft mx-auto w-full max-w-[1600px] p-4 sm:p-6">
+      <PageHeader
+        title="Ticket Management"
+        subtitle={loadError ?? "Triage and resolve unresolved AI queries."}
+      />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
-        <KpiCard icon={TicketIcon} label="Open Tickets" value="184" trend={{ value: 4.2, positive: false }} delay={0} />
-        <KpiCard icon={CheckCircle2} label="Resolved Today" value="42" trend={{ value: 12 }} delay={0.05} />
-        <KpiCard icon={Clock} label="Avg. Resolution" value="3h 12m" trend={{ value: 8 }} delay={0.1} />
-        <KpiCard icon={AlertTriangle} label="Escalated" value="14" trend={{ value: 1.5, positive: false }} delay={0.15} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+        <KpiCard icon={TicketIcon} label="Pending Tickets" value={pendingTickets.toString()} trend={{ value: 0 }} delay={0} />
+        <KpiCard icon={CheckCircle2} label="Loaded Queue" value={tickets.length.toString()} trend={{ value: 0 }} delay={0.05} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 mt-4 sm:mt-6">
@@ -109,7 +170,7 @@ function TicketsPage() {
               <SelectTrigger className="h-9 w-full sm:w-36"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="Open">Open</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
                 <SelectItem value="In Progress">In Progress</SelectItem>
                 <SelectItem value="Escalated">Escalated</SelectItem>
                 <SelectItem value="Resolved">Resolved</SelectItem>
@@ -152,15 +213,17 @@ function TicketsPage() {
           </div>
         </SectionCard>
 
-        <SectionCard
-          title={`Ticket Details — ${selected.id}`}
-          description={selected.question}
-          className="xl:col-span-2"
-        >
+        <SectionCard title={selected ? `Ticket Details - ${selected.id}` : "Ticket Details"} description={selected?.question ?? "Select a pending ticket."} className="xl:col-span-2">
+          {!selected ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">No pending tickets in MongoDB.</div>
+          ) : (
           <div className="space-y-4">
             <DetailBlock icon={Sparkles} label="AI Retrieval Summary">{selected.aiSummary}</DetailBlock>
+            <DetailBlock icon={TicketIcon} label="User Metadata">
+              <p className="text-sm text-muted-foreground">{selected.email ?? "No email"} - {selected.created}</p>
+            </DetailBlock>
             <DetailBlock icon={BookOpenCheck} label="Suggested AI Response">
-              <p className="text-sm text-muted-foreground">{selected.aiResponse || "No response generated — confidence below threshold."}</p>
+              <p className="text-sm text-muted-foreground">{selected.aiResponse || "No response generated - confidence below threshold."}</p>
             </DetailBlock>
             <DetailBlock icon={FileText} label="Related Knowledge Documents">
               <ul className="text-sm space-y-1">
@@ -191,10 +254,11 @@ function TicketsPage() {
                 <Save className="h-3.5 w-3.5" /> Save Draft
               </button>
               <button
-                onClick={() => toast.success("Ticket resolved", { description: selected.id })}
+                onClick={onResolve}
+                disabled={!draft.trim() || resolving || selected.status !== "Pending"}
                 className="inline-flex items-center gap-1.5 h-9 px-3 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
               >
-                <Send className="h-3.5 w-3.5" /> Resolve
+                <Send className="h-3.5 w-3.5" /> {resolving ? "Resolving" : "Resolve"}
               </button>
               <button
                 onClick={() => toast("Ticket escalated to SME", { description: selected.id })}
@@ -210,10 +274,42 @@ function TicketsPage() {
               </button>
             </div>
           </div>
+          )}
         </SectionCard>
       </div>
     </div>
   );
+}
+
+function mapTicketRecord(record: TicketRecord): Ticket {
+  const status = normalizeStatus(record.status);
+  return {
+    id: record.ticket_id,
+    question: record.question,
+    email: record.email,
+    priority: inferPriority(record.question),
+    status,
+    created: new Date(record.created_at).toISOString().slice(0, 10),
+    aiSummary: `Pending MongoDB ticket${record.email ? ` for ${record.email}` : ""}.`,
+    aiResponse: status === "Resolved" ? "Marked resolved from the admin portal." : "Awaiting admin review.",
+    related: record.session_id ? [`Session ${record.session_id}`] : ["MongoDB tickets collection"],
+  };
+}
+
+function inferPriority(question: string): Ticket["priority"] {
+  const text = question.toLowerCase();
+  if (text.includes("urgent") || text.includes("critical") || text.includes("safety")) return "Critical";
+  if (text.includes("vibration") || text.includes("shutdown") || text.includes("alarm")) return "High";
+  if (text.includes("policy") || text.includes("leave") || text.includes("hr")) return "Medium";
+  return "Low";
+}
+
+function normalizeStatus(status: string): Ticket["status"] {
+  const text = status.toLowerCase();
+  if (text.includes("progress")) return "In Progress";
+  if (text.includes("escalat")) return "Escalated";
+  if (text.includes("resolv")) return "Resolved";
+  return "Pending";
 }
 
 function DetailBlock({ icon: Icon, label, children }: { icon: any; label: string; children: React.ReactNode }) {

@@ -32,7 +32,7 @@ export function CategoryCards({
   onSelect: (name: string) => void
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="stagger-soft grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {categories.map((cat) => {
         const Icon = ICONS[cat.icon] ?? Shield
         const isActive = active === cat.name
@@ -40,20 +40,20 @@ export function CategoryCards({
           <motion.button
             key={cat.name}
             type="button"
-            whileHover={{ scale: 1.02 }}
-            transition={{ duration: 0.15 }}
+            whileHover={{ y: -2 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
             onClick={() => onSelect(isActive ? "All" : cat.name)}
             className="text-left"
             aria-pressed={isActive}
           >
             <Card
               className={cn(
-                "h-full border-border transition-shadow hover:shadow-md",
-                isActive && "border-primary ring-1 ring-primary"
+                "ntpc-card h-full border-border bg-card/92",
+                isActive && "border-primary ring-1 ring-primary/30"
               )}
             >
               <CardContent className="flex h-full items-start gap-3 p-5">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-accent text-primary">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-accent text-primary shadow-[0_8px_20px_rgb(0_135_201/10%)] transition-transform duration-200 group-hover/card:scale-105">
                   <Icon className="size-5" aria-hidden="true" />
                 </div>
                 <div className="flex min-w-0 flex-col gap-1">

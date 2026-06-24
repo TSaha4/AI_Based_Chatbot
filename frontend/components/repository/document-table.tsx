@@ -75,7 +75,7 @@ export function DocumentTable({ documents }: { documents: Document[] }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="ntpc-card overflow-hidden rounded-lg border border-border bg-card/92">
       <Table>
         <TableHeader>
           <TableRow className="bg-secondary/50 hover:bg-secondary/50">
@@ -92,7 +92,7 @@ export function DocumentTable({ documents }: { documents: Document[] }) {
           {documents.map((doc) => {
             const bookmarked = bookmarks.has(doc.id)
             return (
-              <TableRow key={doc.id}>
+              <TableRow key={doc.id} className="transition-colors duration-200 hover:bg-secondary/70">
                 <TableCell className="px-4 py-3">
                   <div className="flex items-start gap-2.5">
                     <FileText

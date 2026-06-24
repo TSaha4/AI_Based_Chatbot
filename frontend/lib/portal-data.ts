@@ -8,7 +8,7 @@ export const recentQuestions: { id: string; question: string; time: string }[] =
   [
     {
       id: "q1",
-      question: "What is the lockout-tagout procedure for turbine maintenance?",
+      question: "What documents do I need on my first joining day?",
       time: "2 hours ago",
     },
     {
@@ -18,22 +18,22 @@ export const recentQuestions: { id: string; question: string; time: string }[] =
     },
     {
       id: "q3",
-      question: "What are the PPE requirements for the boiler area?",
+      question: "What PPE is required during plant familiarization?",
       time: "2 days ago",
     },
     {
       id: "q4",
-      question: "What is the escalation matrix for compliance violations?",
+      question: "Where can trainees find their induction schedule?",
       time: "3 days ago",
     },
   ]
 
 export const suggestedTopics: string[] = [
-  "Safety Procedures",
-  "Technical Manuals",
+  "Joining Formalities",
+  "Training Schedule",
   "HR Policies",
-  "Compliance Guidelines",
-  "Operational Processes",
+  "Safety Basics",
+  "Plant Familiarization",
 ]
 
 export type Category = {
@@ -46,37 +46,37 @@ export type Category = {
 export const categories: Category[] = [
   {
     name: "Safety Documentation",
-    description: "Workplace safety standards, PPE, hazard controls",
+    description: "Safety basics, PPE, visitor and trainee precautions",
     count: 142,
     icon: "shield",
   },
   {
     name: "Technical Manuals",
-    description: "Equipment manuals, schematics, operating guides",
+    description: "Introductory manuals and plant familiarization guides",
     count: 318,
     icon: "wrench",
   },
   {
     name: "HR Policies",
-    description: "Leave, payroll, code of conduct, benefits",
+    description: "Joining, leave, conduct, payroll, and benefits",
     count: 87,
     icon: "users",
   },
   {
-    name: "Compliance",
-    description: "Regulatory standards, audits, statutory norms",
+    name: "Joining Formalities",
+    description: "Documents, identity cards, reporting, and induction",
     count: 64,
     icon: "scale",
   },
   {
-    name: "Maintenance Procedures",
-    description: "Preventive and corrective maintenance workflows",
+    name: "Training Procedures",
+    description: "Induction, assessments, schedules, and nominations",
     count: 196,
     icon: "settings",
   },
   {
     name: "Operational Guidelines",
-    description: "SOPs, shift handover, plant operations",
+    description: "Basic SOPs, shift etiquette, and plant operations",
     count: 153,
     icon: "clipboard",
   },
@@ -102,7 +102,7 @@ export const documents: Document[] = [
   },
   {
     id: "DOC-1980",
-    name: "Steam Turbine Operating Manual — Unit 4",
+    name: "Steam Turbine Operating Manual - Unit 4",
     category: "Technical Manuals",
     updated: "09 Jun 2026",
     status: "Published",
@@ -116,15 +116,15 @@ export const documents: Document[] = [
   },
   {
     id: "DOC-2765",
-    name: "Environmental Compliance Audit Checklist",
-    category: "Compliance",
+    name: "New Joinee Document Submission Checklist",
+    category: "Joining Formalities",
     updated: "28 May 2026",
     status: "Published",
   },
   {
     id: "DOC-2210",
-    name: "Boiler Preventive Maintenance Schedule",
-    category: "Maintenance Procedures",
+    name: "Induction Training Attendance Process",
+    category: "Training Procedures",
     updated: "21 May 2026",
     status: "Draft",
   },

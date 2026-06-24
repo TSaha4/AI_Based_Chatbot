@@ -5,7 +5,7 @@ import { recentlyUpdated } from "@/lib/portal-data"
 
 export function RecentlyUpdated() {
   return (
-    <Card className="border-border">
+    <Card className="ntpc-card border-border bg-card/92">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <FileClock className="size-4 text-primary" aria-hidden="true" />
@@ -16,7 +16,7 @@ export function RecentlyUpdated() {
         <ul className="flex flex-col">
           {recentlyUpdated.map((doc, i) => (
             <li key={doc.id}>
-              <div className="flex flex-col gap-1 rounded-md px-3 py-2.5">
+              <div className="flex flex-col gap-1 rounded-md px-3 py-2.5 transition-all duration-200 hover:translate-x-0.5 hover:bg-secondary">
                 <span className="text-sm font-medium leading-snug text-foreground">
                   {doc.name}
                 </span>

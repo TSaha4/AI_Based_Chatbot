@@ -1,69 +1,72 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { toast } from "sonner";
-import { PageHeader, SectionCard, StatusBadge } from "@/components/admin-ui";
+import { PageHeader, SectionCard } from "@/components/admin-ui";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { Slider } from "@/components/ui/slider";
+import { useTheme } from "@/hooks/use-theme";
 
 export const Route = createFileRoute("/settings")({
-  head: () => ({ meta: [{ title: "System Settings — Nexus Knowledge" }] }),
+  head: () => ({ meta: [{ title: "System Settings - NTPC Control Center" }] }),
   component: SettingsPage,
 });
 
-const auditLogs = [
-  { event: "Confidence threshold updated to 0.75", user: "A. Smith", time: "2026-06-22 09:42", status: "Completed" },
-  { event: "Knowledge base sync triggered", user: "R. Mehta", time: "2026-06-21 17:10", status: "Completed" },
-  { event: "User access revoked: tmp.contractor", user: "A. Smith", time: "2026-06-21 11:20", status: "Completed" },
-  { event: "AI response template modified", user: "L. Chen", time: "2026-06-20 14:05", status: "Completed" },
-];
-
 function SettingsPage() {
-  const [confidence, setConfidence] = useState([75]);
-  const [escalation, setEscalation] = useState([60]);
-
+  const { theme, setTheme } = useTheme();
   const save = (label: string) => toast.success(`${label} saved`);
 
   return (
-    <div className="mx-auto w-full max-w-[1200px] p-4 sm:p-6">
-      <PageHeader title="System Settings" subtitle="Configure organization, AI, and security preferences." />
+    <div className="stagger-soft mx-auto w-full max-w-[1200px] p-4 sm:p-6">
+      <PageHeader title="System Settings" subtitle="Configure organization, appearance, and security preferences." />
 
       <Tabs defaultValue="general">
         <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
           <TabsList className="bg-muted">
             <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="ai">AI Configuration</TabsTrigger>
             <TabsTrigger value="kb">Knowledge Base</TabsTrigger>
             <TabsTrigger value="notif">Notifications</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
-            <TabsTrigger value="audit">Audit Logs</TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value="general" className="mt-4">
           <SectionCard title="Organization">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Organization Name" defaultValue="Nexus Power Corporation" />
-              <Field label="System Name" defaultValue="Nexus Knowledge Portal" />
-              <Field label="Contact Email" type="email" defaultValue="admin@nexus.local" />
+              <Field label="Organization Name" defaultValue="NTPC Power Operations" />
+              <Field label="System Name" defaultValue="NTPC Admin Portal" />
+              <Field label="Contact Email" type="email" defaultValue="admin@ntpc.local" />
               <Field label="Time Zone" defaultValue="Asia/Kolkata (UTC+5:30)" />
             </div>
             <div className="mt-4 flex justify-end">
-              <button onClick={() => save("General settings")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90">Save changes</button>
+              <button onClick={() => save("General settings")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 cursor-pointer">Save changes</button>
             </div>
           </SectionCard>
-        </TabsContent>
 
-        <TabsContent value="ai" className="mt-4">
-          <SectionCard title="AI Behavior">
-            <div className="space-y-6">
-              <SliderRow label="Confidence Threshold" desc="Below this score, AI response is flagged for review." value={confidence} setValue={setConfidence} suffix="%" />
-              <SliderRow label="Ticket Escalation Threshold" desc="Auto-escalate when confidence drops below this value." value={escalation} setValue={setEscalation} suffix="%" />
-              <ToggleRow label="Include Source Citations" desc="Append source documents to AI responses." />
-              <ToggleRow label="Conservative Mode" desc="Avoid speculative answers when context is partial." defaultChecked />
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button onClick={() => save("AI configuration")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90">Save changes</button>
+          <SectionCard title="Appearance" className="mt-6">
+            <div>
+              <p className="text-sm font-medium text-foreground">Portal Theme</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Choose how NTPC Control Center looks to you.</p>
+              <div className="mt-4 grid grid-cols-2 gap-4 max-w-md">
+                <button
+                  onClick={() => setTheme("light")}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-lg border text-center transition-all cursor-pointer ${
+                    theme === "light"
+                      ? "border-primary bg-primary/5 text-primary shadow-sm"
+                      : "border-border hover:bg-muted/40 text-muted-foreground"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">Light Mode</span>
+                </button>
+                <button
+                  onClick={() => setTheme("dark")}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-lg border text-center transition-all cursor-pointer ${
+                    theme === "dark"
+                      ? "border-primary bg-primary/5 text-primary shadow-sm"
+                      : "border-border hover:bg-muted/40 text-muted-foreground"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">Dark Mode</span>
+                </button>
+              </div>
             </div>
           </SectionCard>
         </TabsContent>
@@ -79,7 +82,7 @@ function SettingsPage() {
               </div>
             </div>
             <div className="mt-4 flex justify-end">
-              <button onClick={() => save("Knowledge base settings")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90">Save changes</button>
+              <button onClick={() => save("Knowledge base settings")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 cursor-pointer">Save changes</button>
             </div>
           </SectionCard>
         </TabsContent>
@@ -92,7 +95,7 @@ function SettingsPage() {
               <ToggleRow label="Processing Notifications" desc="Notify when document processing completes." />
             </div>
             <div className="mt-4 flex justify-end">
-              <button onClick={() => save("Notification settings")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90">Save changes</button>
+              <button onClick={() => save("Notification settings")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 cursor-pointer">Save changes</button>
             </div>
           </SectionCard>
         </TabsContent>
@@ -114,34 +117,7 @@ function SettingsPage() {
               </div>
             </div>
             <div className="mt-4 flex justify-end">
-              <button onClick={() => save("Security settings")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90">Update</button>
-            </div>
-          </SectionCard>
-        </TabsContent>
-
-        <TabsContent value="audit" className="mt-4">
-          <SectionCard title="Recent Configuration Changes" description="Last 30 days">
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <table className="w-full text-sm min-w-[640px]">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground border-b border-border">
-                    <th className="py-2 px-3 font-medium">Event</th>
-                    <th className="py-2 px-3 font-medium">User</th>
-                    <th className="py-2 px-3 font-medium">Time</th>
-                    <th className="py-2 px-3 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLogs.map((l, i) => (
-                    <tr key={i} className="border-b border-border last:border-0 hover:bg-muted/40">
-                      <td className="py-2.5 px-3 text-foreground">{l.event}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground">{l.user}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground font-mono text-xs">{l.time}</td>
-                      <td className="py-2.5 px-3"><StatusBadge status={l.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <button onClick={() => save("Security settings")} className="h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 cursor-pointer">Update</button>
             </div>
           </SectionCard>
         </TabsContent>
@@ -157,7 +133,7 @@ function Field({ label, defaultValue, type = "text" }: { label: string; defaultV
       <input
         type={type}
         defaultValue={defaultValue}
-        className="h-9 px-3 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring/30"
+        className="h-9 px-3 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring/30 text-foreground"
       />
     </label>
   );
@@ -171,19 +147,6 @@ function ToggleRow({ label, desc, defaultChecked }: { label: string; desc?: stri
         {desc && <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>}
       </div>
       <Switch defaultChecked={defaultChecked} />
-    </div>
-  );
-}
-
-function SliderRow({ label, desc, value, setValue, suffix = "" }: { label: string; desc?: string; value: number[]; setValue: (v: number[]) => void; suffix?: string }) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        <span className="text-sm font-mono text-primary">{value[0]}{suffix}</span>
-      </div>
-      {desc && <p className="text-xs text-muted-foreground mb-3">{desc}</p>}
-      <Slider value={value} onValueChange={setValue} min={0} max={100} step={5} />
     </div>
   );
 }

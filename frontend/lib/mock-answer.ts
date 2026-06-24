@@ -16,7 +16,7 @@ export type AnswerResult =
       kind: "ticket"
       question: string
       confidence: number
-      ticketId: string
+      ticketId?: string | null
       status: string
       estimatedReview: string
     }
@@ -28,13 +28,33 @@ const KNOWLEDGE: {
   sources: SourceDoc[]
 }[] = [
   {
+    match: ["joining", "formalities", "document", "documents", "first day"],
+    answer:
+      "New joinees should carry their appointment letter, government ID, educational certificates, bank details, photographs, and any medical or verification documents requested by HR. Report to the designated HR or training coordinator at the time mentioned in your joining communication.",
+    confidence: 92,
+    sources: [
+      { id: "DOC-2765", title: "New Joinee Document Submission Checklist", section: "Section 1 - Required Documents" },
+      { id: "DOC-3122", title: "Leave & Attendance Policy 2026", section: "Section 1 - Employee Profile Setup" },
+    ],
+  },
+  {
+    match: ["training", "schedule", "induction", "trainee", "nomination"],
+    answer:
+      "Trainees can find their induction schedule through the training coordinator or the shared training calendar. The schedule usually covers HR orientation, safety briefing, plant familiarization, department introductions, and mandatory assessments. Attendance should be marked for every session.",
+    confidence: 90,
+    sources: [
+      { id: "DOC-2210", title: "Induction Training Attendance Process", section: "Section 2 - Schedule and Attendance" },
+      { id: "DOC-1654", title: "Shift Handover Standard Operating Procedure", section: "Section 1 - Workplace Orientation" },
+    ],
+  },
+  {
     match: ["lockout", "tagout", "loto", "turbine", "safety"],
     answer:
       "The Lockout-Tagout (LOTO) procedure requires isolating all energy sources before turbine maintenance. Authorized personnel must apply individual locks and tags, verify zero-energy state with a test instrument, and record the isolation in the permit-to-work register. Locks may only be removed by the person who applied them after work completion and area clearance.",
     confidence: 96,
     sources: [
-      { id: "DOC-2041", title: "Lockout-Tagout (LOTO) Standard Procedure", section: "Section 3.2 — Energy Isolation" },
-      { id: "DOC-1980", title: "Steam Turbine Operating Manual — Unit 4", section: "Chapter 7 — Maintenance Safety" },
+      { id: "DOC-2041", title: "Lockout-Tagout (LOTO) Standard Procedure", section: "Section 3.2 - Energy Isolation" },
+      { id: "DOC-1980", title: "Steam Turbine Operating Manual - Unit 4", section: "Chapter 7 - Maintenance Safety" },
     ],
   },
   {
@@ -43,7 +63,7 @@ const KNOWLEDGE: {
       "Employees are entitled to 12 casual leaves per calendar year, accrued at 1 per month. Casual leave cannot be combined with earned leave and must be applied for at least one working day in advance through the HR portal, except in emergencies. Unused casual leave lapses at year end and is not encashable.",
     confidence: 91,
     sources: [
-      { id: "DOC-3122", title: "Leave & Attendance Policy 2026", section: "Section 4 — Casual Leave" },
+      { id: "DOC-3122", title: "Leave & Attendance Policy 2026", section: "Section 4 - Casual Leave" },
     ],
   },
   {
@@ -60,7 +80,7 @@ const KNOWLEDGE: {
       "Personnel entering the boiler area must wear a hard hat, flame-resistant coveralls, safety goggles, ear protection, and steel-toe boots. Respiratory protection is mandatory during ash handling. PPE must be inspected before each shift, and any damaged equipment reported and replaced immediately.",
     confidence: 94,
     sources: [
-      { id: "DOC-2899", title: "Personal Protective Equipment (PPE) Matrix", section: "Zone B — High Temperature Areas" },
+      { id: "DOC-2899", title: "Personal Protective Equipment (PPE) Matrix", section: "Zone B - High Temperature Areas" },
       { id: "DOC-2041", title: "Lockout-Tagout (LOTO) Standard Procedure", section: "Appendix A" },
     ],
   },
@@ -70,7 +90,7 @@ const KNOWLEDGE: {
       "Compliance violations follow a three-tier escalation matrix. Level 1 issues are addressed by the unit supervisor within 24 hours, Level 2 issues are escalated to the compliance officer within 48 hours, and Level 3 (statutory) issues are reported to the regulatory affairs head immediately and logged in the central compliance register.",
     confidence: 88,
     sources: [
-      { id: "DOC-2765", title: "Environmental Compliance Audit Checklist", section: "Section 2 — Escalation" },
+      { id: "DOC-2765", title: "New Joinee Document Submission Checklist", section: "Section 2 - Escalation" },
     ],
   },
   {
@@ -79,7 +99,7 @@ const KNOWLEDGE: {
       "Shift handover must be documented in the handover log and verbally communicated to the incoming operator. The log must capture equipment status, pending tasks, abnormal conditions, and outstanding permits. Both outgoing and incoming operators sign the log to confirm transfer of responsibility.",
     confidence: 90,
     sources: [
-      { id: "DOC-1654", title: "Shift Handover Standard Operating Procedure", section: "Section 1 — Handover Protocol" },
+      { id: "DOC-1654", title: "Shift Handover Standard Operating Procedure", section: "Section 1 - Handover Protocol" },
     ],
   },
 ]
@@ -102,8 +122,8 @@ export function generateAnswer(question: string): AnswerResult {
     kind: "ticket",
     question,
     confidence: 38,
-    ticketId: `TKT-${Math.floor(100000 + Math.random() * 899999)}`,
-    status: "Forwarded for Expert Review",
+    ticketId: null,
+    status: "Ticket suggested",
     estimatedReview: "Within 1 business day",
   }
 }

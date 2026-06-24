@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
   MessageSquare,
   Ticket,
@@ -25,10 +26,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { KpiCard, PageHeader, SectionCard, StatusBadge } from "@/components/admin-ui";
+import { fetchAdminOverview, BackendApiError, type AdminOverviewResponse } from "@/lib/backend-api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
-    meta: [{ title: "Admin Dashboard — Nexus Knowledge" }],
+    meta: [{ title: "Admin Dashboard - NTPC Control Center" }],
   }),
   component: DashboardPage,
 });
@@ -62,14 +64,6 @@ const kbGrowth = [
   { month: "Jun", docs: 780 },
 ];
 
-const recent = [
-  { q: "How to reset access card?", status: "Resolved", date: "2026-06-21", admin: "A. Smith" },
-  { q: "Turbine vibration thresholds", status: "In Progress", date: "2026-06-21", admin: "R. Mehta" },
-  { q: "HR leave policy clarification", status: "Resolved", date: "2026-06-20", admin: "L. Chen" },
-  { q: "Coal handling shutdown SOP", status: "Escalated", date: "2026-06-20", admin: "M. Patel" },
-  { q: "Compliance reporting cadence", status: "Open", date: "2026-06-19", admin: "Unassigned" },
-];
-
 const gaps = [
   { topic: "FGD operating parameters (2025 update)", count: 42, type: "Unanswered" },
   { topic: "New leave encashment policy", count: 31, type: "Emerging" },
@@ -84,79 +78,56 @@ const chartTheme = {
 };
 
 function DashboardPage() {
+  const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = () => fetchAdminOverview()
+      .then((data) => {
+        if (active) {
+          setOverview(data);
+          setOverviewError(null);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setOverviewError(
+            err instanceof BackendApiError
+              ? err.message
+              : "Live Mongo snapshot unavailable",
+          );
+        }
+      });
+    load();
+    const id = window.setInterval(load, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  const collectionCount = overview?.collections ?? {};
+  const totalKnowledgeDocs = overview?.knowledge_base_count ?? (collectionCount.knowledge_chunks ?? 0) + (collectionCount.admin_resolutions ?? 0);
+  const activeResponses = collectionCount.response_cache ?? 0;
+  const topicAliases = collectionCount.topic_aliases ?? 0;
+  const queryRecords = overview?.analytics_count ?? collectionCount.query_analytics ?? 0;
+  const ticketRecords = overview?.total_tickets ?? collectionCount.tickets ?? 0;
+  const pendingTickets = overview?.pending_tickets ?? 0;
+  const resolvedTickets = overview?.resolved_tickets ?? 0;
+
   return (
-    <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6">
+    <div className="stagger-soft mx-auto w-full max-w-[1600px] p-4 sm:p-6">
       <PageHeader
         title="Admin Dashboard"
         subtitle="Operational overview of queries, tickets, and knowledge health."
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
-        <KpiCard icon={MessageSquare} label="Total Queries" value="12,480" trend={{ value: 8.4 }} description="Last 30 days" delay={0} />
-        <KpiCard icon={Ticket} label="Pending Tickets" value="184" trend={{ value: 2.1, positive: false }} description="Across all queues" delay={0.05} />
-        <KpiCard icon={CheckCircle2} label="Resolved Tickets" value="1,920" trend={{ value: 12.3 }} description="This month" delay={0.1} />
-        <KpiCard icon={BookOpen} label="Knowledge Articles" value="780" trend={{ value: 5.6 }} description="Active in index" delay={0.15} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4 sm:mt-6">
-        <SectionCard title="Daily Query Trends" description="User questions submitted to AI" className="lg:col-span-2">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={queryTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
-                <XAxis dataKey="day" stroke={chartTheme.axis} fontSize={12} />
-                <YAxis stroke={chartTheme.axis} fontSize={12} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid var(--color-border)" }} />
-                <Line type="monotone" dataKey="value" stroke={chartTheme.primary} strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </SectionCard>
-
-        <SectionCard title="System Health">
-          <ul className="space-y-3 text-sm">
-            <HealthRow icon={Database} label="Database" status="Healthy" />
-            <HealthRow icon={Cpu} label="Knowledge Processing" status="Healthy" />
-            <HealthRow icon={ListChecks} label="Ticket Queue" status="Backlog: 184" warn />
-          </ul>
-        </SectionCard>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4 sm:mt-6">
-        <SectionCard title="Ticket Resolution Trends">
-          <div className="h-60">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={ticketTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
-                <XAxis dataKey="day" stroke={chartTheme.axis} fontSize={12} />
-                <YAxis stroke={chartTheme.axis} fontSize={12} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid var(--color-border)" }} />
-                <Bar dataKey="opened" fill="var(--color-accent-foreground)" radius={[4, 4, 0, 0]} opacity={0.4} />
-                <Bar dataKey="resolved" fill={chartTheme.primary} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Knowledge Growth">
-          <div className="h-60">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={kbGrowth}>
-                <defs>
-                  <linearGradient id="kbGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
-                <XAxis dataKey="month" stroke={chartTheme.axis} fontSize={12} />
-                <YAxis stroke={chartTheme.axis} fontSize={12} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid var(--color-border)" }} />
-                <Area type="monotone" dataKey="docs" stroke={chartTheme.primary} strokeWidth={2} fill="url(#kbGrad)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </SectionCard>
+        <KpiCard icon={MessageSquare} label="Total Queries" value={queryRecords.toString()} trend={{ value: 0 }} description="Mongo query_analytics" delay={0} />
+        <KpiCard icon={Ticket} label="Pending Tickets" value={pendingTickets.toString()} trend={{ value: 0, positive: pendingTickets === 0 }} description="tickets.status = pending" delay={0.05} />
+        <KpiCard icon={CheckCircle2} label="Resolved Tickets" value={resolvedTickets.toString()} trend={{ value: 0 }} description="tickets.status = resolved" delay={0.1} />
+        <KpiCard icon={BookOpen} label="Knowledge Articles" value={totalKnowledgeDocs.toString()} trend={{ value: 0 }} description="knowledge + learned answers" delay={0.15} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4 sm:mt-6">
@@ -172,35 +143,65 @@ function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {recent.map((r, i) => (
-                  <tr key={i} className="border-b border-border last:border-0 hover:bg-muted/40">
-                    <td className="py-2.5 px-3 text-foreground">{r.q}</td>
-                    <td className="py-2.5 px-3"><StatusBadge status={r.status} /></td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{r.date}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{r.admin}</td>
+                {(overview?.recent_tickets ?? []).map((r) => (
+                  <tr key={r.ticket_id} className="border-b border-border last:border-0 hover:bg-muted/40">
+                    <td className="py-2.5 px-3 text-foreground">{r.question}</td>
+                    <td className="py-2.5 px-3"><StatusBadge status={formatStatus(r.status)} /></td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{r.email ?? "Unassigned"}</td>
                   </tr>
                 ))}
+                {(overview?.recent_tickets ?? []).length === 0 && (
+                  <tr><td colSpan={4} className="py-8 text-center text-sm text-muted-foreground">No live ticket activity yet.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </SectionCard>
 
-        <SectionCard title="Knowledge Gap Insights" description="AI-driven recommendations">
-          <ul className="space-y-3">
-            {gaps.map((g, i) => (
-              <li key={i} className="flex items-start gap-3 p-2.5 rounded-md border border-border">
-                <div className="h-7 w-7 shrink-0 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-                  {g.type === "Unanswered" ? <AlertTriangle className="h-3.5 w-3.5" /> : g.type === "Emerging" ? <TrendingUp className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-foreground truncate">{g.topic}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{g.type} • {g.count} mentions</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </SectionCard>
+        <div className="flex flex-col gap-4">
+          <SectionCard title="System Health">
+            <ul className="space-y-3 text-sm">
+              <HealthRow icon={Database} label="Database" status={overview?.health.database === "ok" ? "Healthy" : "Unavailable"} warn={overview?.health.database !== "ok"} />
+              <HealthRow icon={Cpu} label="Knowledge Processing" status={overview?.health.services.nlp ?? "Healthy"} />
+              <HealthRow icon={ListChecks} label="Ticket Queue" status={`Backlog: ${ticketRecords}`} warn={ticketRecords > 0} />
+            </ul>
+          </SectionCard>
+
+          <SectionCard title="Knowledge Gap Insights" description="AI-driven recommendations">
+            <ul className="space-y-3">
+              {gaps.map((g, i) => (
+                <li key={i} className="flex items-start gap-3 p-2.5 rounded-md border border-border">
+                  <div className="h-7 w-7 shrink-0 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                    {g.type === "Unanswered" ? <AlertTriangle className="h-3.5 w-3.5" /> : g.type === "Emerging" ? <TrendingUp className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-foreground truncate">{g.topic}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{g.type} • {g.count} mentions</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </SectionCard>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function formatStatus(status: string) {
+  const value = status.toLowerCase();
+  if (value.includes("resolv")) return "Resolved";
+  if (value.includes("progress")) return "In Progress";
+  if (value.includes("escalat")) return "Escalated";
+  return "Pending";
+}
+
+function LiveStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-md border border-border bg-background/60 p-3">
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-foreground">{value}</p>
     </div>
   );
 }

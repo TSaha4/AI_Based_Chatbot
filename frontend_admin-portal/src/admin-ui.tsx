@@ -25,10 +25,10 @@ export function KpiCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay }}
       whileHover={{ scale: 1.02 }}
-      className="rounded-lg border border-border bg-card p-4 sm:p-5 transition-shadow hover:shadow-sm"
+      className="ntpc-card rounded-lg border border-border bg-card p-4 sm:p-5"
     >
       <div className="flex items-start justify-between">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+        <div className="animate-logo-breathe flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />
         </div>
         {trend && (
@@ -88,10 +88,10 @@ export function SectionCard({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      className={cn("rounded-lg border border-border bg-card", className)}
+      className={cn("ntpc-card rounded-lg border border-border bg-card", className)}
     >
       {(title || action) && (
-        <div className="flex items-start justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-border">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5">
           <div className="min-w-0">
             {title && <h2 className="text-sm font-semibold text-foreground">{title}</h2>}
             {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}

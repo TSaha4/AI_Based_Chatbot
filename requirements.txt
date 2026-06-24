@@ -1,2 +1,12 @@
 pymongo
 python-dotenv
+fastapi
+uvicorn[standard]
+pymongo
+pydantic-settings
+email-validator
+sentence-transformers
+rapidfuzz
+google-genai
+PyMuPDF
+python-multipart
