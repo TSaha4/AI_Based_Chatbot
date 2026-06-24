@@ -10,6 +10,8 @@ import {
   FileText,
   ShieldQuestion,
   CircleCheck,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -18,7 +20,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { createSupportTicket } from "@/lib/chat-api"
+import { createSupportTicket, isValidEmail } from "@/lib/chat-api"
 import type { AnswerResult } from "@/lib/mock-answer"
 
 function ConfidenceMeter({ score }: { score: number }) {
@@ -100,10 +102,145 @@ export function TypingIndicator() {
   )
 }
 
+type FeedbackPhase =
+  | "idle"
+  | "helpful"
+  | "ticket_prompt"
+  | "email"
+  | "ticket_created"
+  | "declined"
+
+function ResponseFeedback({
+  question,
+  sessionId,
+}: {
+  question: string
+  sessionId: string
+}) {
+  const [phase, setPhase] = useState<FeedbackPhase>("idle")
+  const [email, setEmail] = useState("")
+  const [ticketId, setTicketId] = useState<string | null>(null)
+  const [ticketStatus, setTicketStatus] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState("")
+
+  const canSubmit = isValidEmail(email)
+
+  const raiseTicket = async () => {
+    if (!canSubmit || submitting) return
+    setSubmitting(true)
+    setError("")
+    try {
+      const ticket = await createSupportTicket({ question, email: email.trim(), sessionId })
+      setTicketId(ticket.ticket_id)
+      setTicketStatus(ticket.status)
+      setPhase("ticket_created")
+    } catch {
+      setError("Ticket creation failed. Please try again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (phase === "helpful") {
+    return (
+      <p className="text-sm text-muted-foreground">Thanks for your feedback.</p>
+    )
+  }
+
+  if (phase === "ticket_created" && ticketId) {
+    return (
+      <div className="flex flex-col gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3">
+        <p className="text-sm font-medium text-foreground">Support ticket created successfully.</p>
+        <p className="text-sm text-muted-foreground">
+          Ticket ID: <span className="font-mono font-semibold text-foreground">{ticketId}</span>
+          {ticketStatus ? ` · Status: ${ticketStatus}` : null}
+        </p>
+      </div>
+    )
+  }
+
+  if (phase === "declined") {
+    return (
+      <p className="text-sm text-muted-foreground">No ticket was created.</p>
+    )
+  }
+
+  if (phase === "ticket_prompt") {
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="text-sm font-medium text-foreground">
+          Would you like to raise a support ticket?
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => setPhase("email")}>
+            Yes
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setPhase("declined")}>
+            No
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (phase === "email") {
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="text-sm font-medium text-foreground">Enter your email to raise a support ticket</p>
+        <input
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          type="email"
+          placeholder="you@example.com"
+          className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={raiseTicket} disabled={!canSubmit || submitting}>
+            {submitting ? "Creating..." : "Submit ticket"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setPhase("declined")}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm font-medium text-foreground">Was this answer helpful?</p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setPhase("helpful")}
+          aria-label="Yes, this answer was helpful"
+        >
+          <ThumbsUp data-icon="inline-start" />
+          Yes
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setPhase("ticket_prompt")}
+          aria-label="No, this answer was not helpful"
+        >
+          <ThumbsDown data-icon="inline-start" />
+          No
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function AnswerCard({
   result,
+  sessionId,
 }: {
   result: Extract<AnswerResult, { kind: "answer" }>
+  sessionId: string
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -173,6 +310,10 @@ function AnswerCard({
             {copied ? "Copied" : "Copy answer"}
           </Button>
         </div>
+
+        <Separator />
+
+        <ResponseFeedback question={result.question} sessionId={sessionId} />
       </CardContent>
     </Card>
   )
@@ -192,7 +333,7 @@ function TicketCard({
   const [declined, setDeclined] = useState(false)
   const [error, setError] = useState("")
 
-  const canSubmit = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  const canSubmit = isValidEmail(email)
 
   const raiseTicket = async () => {
     if (!canSubmit || submitting) return
@@ -227,7 +368,7 @@ function TicketCard({
             <p className="text-sm leading-relaxed text-muted-foreground">
               {ticketId
                 ? "The question has been forwarded for expert review."
-                : "Would you like to raise a support ticket for admin review?"}
+                : result.message ?? "Would you like to raise a support ticket for admin review?"}
             </p>
           </div>
         </div>
@@ -304,7 +445,7 @@ export function AiResponse({ result, sessionId }: { result: AnswerResult; sessio
     >
       <QuestionBubble question={result.question} />
       {result.kind === "answer" ? (
-        <AnswerCard result={result} />
+        <AnswerCard result={result} sessionId={sessionId} />
       ) : (
         <TicketCard result={result} sessionId={sessionId} />
       )}

@@ -152,8 +152,10 @@ class FlowVerifier:
         ok &= self._record(processed.normalized != processed.original.lower(), "NLP normalization")
         ok &= self._record(len(processed.corrected_tokens) > 0, "NLP lemmatization/stopword removal")
 
-        _, sources, context, mapped_topic, score = self.retrieval.retrieve("What are the FGD operating pH limits?")
-        ok &= self._record(len(sources) > 0, "Vector retrieval returns sources", f"score={score:.4f}")
+        fgd_result = self.retrieval.retrieve("What are the FGD operating pH limits?")
+        sources = fgd_result.sources
+        context = fgd_result.context
+        ok &= self._record(len(sources) > 0, "Vector retrieval returns sources", f"score={fgd_result.quality.combined_score:.4f}")
         ok &= self._record(len(context) > 0, "Context assembled for Gemini")
         ok &= self._record(
             any(source.collection == "knowledge_chunks" for source in sources),
@@ -168,22 +170,23 @@ class FlowVerifier:
             "safety_ppe",
             "verify-script",
         )
-        _, resolution_sources, _, _, resolution_score = self.retrieval.retrieve(
+        resolution_result = self.retrieval.retrieve(
             "What personal protective equipment is required in NTPC plants?"
         )
+        resolution_sources = resolution_result.sources
         ok &= self._record(
             any(source.collection == "admin_resolutions" for source in resolution_sources),
             "admin_resolutions searched",
-            f"score={resolution_score:.4f}",
+            f"score={resolution_result.quality.combined_score:.4f}",
         )
 
         ranked_scores = [source.score for source in sorted(sources + resolution_sources, key=lambda s: s.score, reverse=True)]
         ok &= self._record(
             ranked_scores == sorted(ranked_scores, reverse=True),
-            "Merged results ranked by similarity",
+            "Merged results ranked by hybrid score",
         )
 
-        confidence = self.confidence.evaluate(score)
+        confidence = self.confidence.evaluate(fgd_result.quality)
         ok &= self._record(confidence.label in {"high", "medium", "low"}, "Confidence threshold applied")
 
         return ok

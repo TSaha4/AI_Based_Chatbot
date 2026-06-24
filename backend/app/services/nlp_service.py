@@ -15,6 +15,8 @@ class PreprocessedQuery:
     corrected_tokens: List[str]
     expanded_query: str
     aliases: Dict[str, str]
+    phrases: List[str]
+    search_tokens: List[str]
 
 
 class NLPPreprocessingService:
@@ -22,11 +24,12 @@ class NLPPreprocessingService:
 
     def __init__(self, db: Database):
         self.db = db
+        # Keep intent-bearing words (how, what, when, where, why, much) for embedding and matching.
         self.stopwords: Set[str] = {
             "a", "an", "the", "is", "are", "am", "to", "of", "in", "on", "for",
-            "and", "or", "with", "by", "from", "how", "what", "when", "where",
-            "why", "can", "could", "should", "would", "i", "me", "my", "we",
-            "our", "you", "your", "please", "hai", "hain", "ka", "ki", "ke",
+            "and", "or", "with", "by", "from", "can", "could", "should", "would",
+            "i", "me", "my", "we", "our", "you", "your", "please",
+            "hai", "hain", "ka", "ki", "ke",
         }
 
     def preprocess(self, query: str) -> PreprocessedQuery:
@@ -37,6 +40,8 @@ class NLPPreprocessingService:
         alias_map = self.load_aliases()
         corrected_tokens = self.correct_spelling(lemmas, alias_map.keys())
         expanded_query, matched_aliases = self.expand_aliases(corrected_tokens, alias_map)
+        phrases = self.extract_phrases(normalized)
+        search_tokens = list(dict.fromkeys(corrected_tokens))
         return PreprocessedQuery(
             original=query,
             normalized=normalized,
@@ -44,6 +49,8 @@ class NLPPreprocessingService:
             corrected_tokens=corrected_tokens,
             expanded_query=expanded_query,
             aliases=matched_aliases,
+            phrases=phrases,
+            search_tokens=search_tokens,
         )
 
     def normalize(self, query: str) -> str:
@@ -101,3 +108,14 @@ class NLPPreprocessingService:
                 matched[alias] = topic
                 expanded_terms.append(topic)
         return " ".join(dict.fromkeys(expanded_terms)), matched
+
+    def extract_phrases(self, normalized: str) -> List[str]:
+        words = normalized.split()
+        phrases: List[str] = []
+        for size in (2, 3):
+            for index in range(len(words) - size + 1):
+                gram = words[index : index + size]
+                if all(word in self.stopwords for word in gram):
+                    continue
+                phrases.append(" ".join(gram))
+        return list(dict.fromkeys(phrases))

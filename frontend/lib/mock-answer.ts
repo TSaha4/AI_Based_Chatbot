@@ -19,6 +19,7 @@ export type AnswerResult =
       ticketId?: string | null
       status: string
       estimatedReview: string
+      message?: string
     }
 
 const KNOWLEDGE: {

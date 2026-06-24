@@ -69,46 +69,55 @@ def get_services(settings: Settings = Depends(get_settings)) -> dict:
 @router.post("/query", response_model=ChatQueryResponse, summary="Process a user query with RAG")
 def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(get_services)]) -> ChatQueryResponse:
     try:
-        processed, sources, context, mapped_topic, score = services["retrieval"].retrieve(payload.query)
-        confidence = services["confidence"].evaluate(score)
+        result = services["retrieval"].retrieve(payload.query)
+        confidence = services["confidence"].evaluate(result.quality)
         ticket_suggested = confidence.ticket_required
-        cached_answer = None if ticket_suggested else services["cache"].get_cached_answer(mapped_topic)
+        cached_answer = None if ticket_suggested else services["cache"].get_cached_answer(result.mapped_topic)
         cached = cached_answer is not None
-        answer = (
-            "I could not find a sufficiently reliable answer in the knowledge base. "
+        weak_retrieval_message = (
+            "The knowledge base does not contain sufficient information to answer this question. "
             "Would you like to raise a support ticket for admin review?"
+        )
+        answer = (
+            weak_retrieval_message
             if ticket_suggested
-            else cached_answer or services["gemini"].generate_answer(payload.query, context)
+            else cached_answer or services["gemini"].generate_answer(payload.query, result.context)
         )
 
         if ticket_suggested:
             return ChatQueryResponse(
                 answer=answer,
-                mapped_topic=mapped_topic,
+                mapped_topic=result.mapped_topic,
                 confidence=confidence,
                 ticket_required=True,
                 ticket_suggested=True,
                 ticket_id=None,
                 cached=False,
-                sources=sources,
+                sources=result.sources,
                 session_id=payload.session_id,
             )
 
         if not cached:
-            services["cache"].store_answer(mapped_topic, payload.query, answer)
+            services["cache"].store_answer(result.mapped_topic, payload.query, answer)
 
-        services["analytics"].record(payload.query, mapped_topic, score, answer, payload.session_id)
-        services["alias_learning"].observe(processed.normalized, mapped_topic)
+        services["analytics"].record(
+            payload.query,
+            result.mapped_topic,
+            result.quality.combined_confidence,
+            answer,
+            payload.session_id,
+        )
+        services["alias_learning"].observe(result.processed.normalized, result.mapped_topic)
 
         return ChatQueryResponse(
             answer=answer,
-            mapped_topic=mapped_topic,
+            mapped_topic=result.mapped_topic,
             confidence=confidence,
             ticket_required=ticket_suggested,
             ticket_suggested=ticket_suggested,
             ticket_id=None,
             cached=cached,
-            sources=sources,
+            sources=result.sources,
             session_id=payload.session_id,
         )
     except PyMongoError as exc:

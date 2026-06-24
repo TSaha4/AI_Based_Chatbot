@@ -34,6 +34,12 @@ type BackendTicketResponse = {
   created_at: string
 }
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+export function isValidEmail(email: string): boolean {
+  return EMAIL_PATTERN.test(email.trim())
+}
+
 function mapSources(sources: BackendSource[]): SourceDoc[] {
   return sources.map((source) => ({
     id: source.id,
@@ -75,6 +81,7 @@ export async function queryChatbot(input: {
         ticketId: data.ticket_id ?? null,
         status: "Ticket suggested",
         estimatedReview: "Within 1 business day",
+        message: data.answer,
       }
     }
 

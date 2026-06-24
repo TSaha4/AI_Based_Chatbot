@@ -10,6 +10,8 @@ class SourceDocument(BaseModel):
     topic: Optional[str] = None
     score: float
     preview: str
+    vector_score: Optional[float] = None
+    keyword_score: Optional[float] = None
 
 
 class ConfidenceResult(BaseModel):

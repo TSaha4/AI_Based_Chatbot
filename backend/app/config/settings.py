@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     embedding_model_name: str = Field(default="sentence-transformers/all-MiniLM-L6-v2")
     vector_index_name: str = Field(default="vector_index", validation_alias="VECTOR_INDEX_NAME")
     top_k: int = Field(default=5, ge=1, le=20)
+    retrieval_candidate_limit: int = Field(default=20, ge=5, le=50, validation_alias="RETRIEVAL_CANDIDATE_LIMIT")
+    hybrid_vector_weight: float = Field(default=0.7, ge=0, le=1, validation_alias="HYBRID_VECTOR_WEIGHT")
+    hybrid_keyword_weight: float = Field(default=0.3, ge=0, le=1, validation_alias="HYBRID_KEYWORD_WEIGHT")
+    weak_retrieval_threshold: float = Field(default=0.35, ge=0, le=1, validation_alias="WEAK_RETRIEVAL_THRESHOLD")
+    retrieval_debug: bool = Field(default=False, validation_alias="RETRIEVAL_DEBUG")
 
     high_confidence_threshold: float = Field(default=0.80, ge=0, le=1)
     medium_confidence_threshold: float = Field(default=0.60, ge=0, le=1)
