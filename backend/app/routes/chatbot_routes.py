@@ -1,6 +1,7 @@
 from fastapi import Depends
 from app.auth.jwt_handler import get_current_admin
 import logging
+from time import perf_counter
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -13,6 +14,7 @@ from app.models.response_models import (
     AdminLoginResponse,
     AdminResolveTicketResponse,
     AdminOverviewResponse,
+    ConfidenceResult,
     AnalyticsItem,
     ChatQueryResponse,
     HealthResponse,
@@ -70,12 +72,80 @@ def get_services(settings: Settings = Depends(get_settings)) -> dict:
 
 @router.post("/query", response_model=ChatQueryResponse, summary="Process a user query with RAG")
 def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(get_services)]) -> ChatQueryResponse:
+    total_start = perf_counter()
+    timings: dict[str, float] = {}
     try:
-        result = services["retrieval"].retrieve(payload.query)
+        retrieval = services["retrieval"]
+        settings = services["settings"]
+
+        stage_start = perf_counter()
+        processed = retrieval.nlp_service.preprocess(payload.query)
+        timings["preprocess_ms"] = _elapsed_ms(stage_start)
+
+        embed_text = retrieval._embedding_text(processed)
+        stage_start = perf_counter()
+        query_embedding = retrieval.embedding_service.embed_query(embed_text)
+        timings["embedding_ms"] = _elapsed_ms(stage_start)
+
+        stage_start = perf_counter()
+        cached_entry = services["cache"].get_equivalent_cached_response(
+            query=payload.query,
+            query_embedding=query_embedding,
+            similarity_floor=settings.cache_similarity_floor,
+        )
+        timings["cache_lookup_ms"] = _elapsed_ms(stage_start)
+
+        if cached_entry is not None:
+            answer = cached_entry.get("answer") or ""
+            mapped_topic = cached_entry.get("topic")
+            confidence = _cached_confidence(cached_entry, settings)
+            services["analytics"].record(
+                payload.query,
+                mapped_topic,
+                confidence.score,
+                answer,
+                payload.session_id,
+            )
+            services["alias_learning"].observe(processed.normalized, mapped_topic)
+            timings.update(
+                {
+                    "mongo_retrieval_ms": 0.0,
+                    "rerank_confidence_ms": 0.0,
+                    "gemini_ms": 0.0,
+                    "total_ms": _elapsed_ms(total_start),
+                }
+            )
+            _log_query_timing(payload.query, True, timings)
+            return ChatQueryResponse(
+                answer=answer,
+                mapped_topic=mapped_topic,
+                confidence=confidence,
+                ticket_required=False,
+                ticket_suggested=False,
+                ticket_id=None,
+                cached=True,
+                sources=[],
+                session_id=payload.session_id,
+            )
+
+        result = retrieval.retrieve(
+            payload.query,
+            processed=processed,
+            embed_text=embed_text,
+            embedding=query_embedding,
+        )
+        retrieval_timings = result.timings_ms or {}
+        timings["mongo_retrieval_ms"] = retrieval_timings.get("mongo_retrieval_ms", 0.0)
+        timings["rerank_confidence_ms"] = retrieval_timings.get("rerank_ms", 0.0)
 
         # Evaluate confidence of retrieved results using settings (high >= 0.90, medium >= 0.75).
         # If confidence is low (< 0.75), ticket_required is True.
+        stage_start = perf_counter()
         confidence = services["confidence"].evaluate(result.quality)
+        timings["rerank_confidence_ms"] = round(
+            timings["rerank_confidence_ms"] + _elapsed_ms(stage_start),
+            2,
+        )
         ticket_suggested = confidence.ticket_required
 
         # When retrieval is too weak, skip both cache and Gemini; the mapped
@@ -85,6 +155,9 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
                 "The knowledge base does not contain sufficient information to answer this question. "
                 "Would you like to raise a support ticket for admin review?"
             )
+            timings["gemini_ms"] = 0.0
+            timings["total_ms"] = _elapsed_ms(total_start)
+            _log_query_timing(payload.query, False, timings)
             return ChatQueryResponse(
                 answer=weak_retrieval_message,
                 mapped_topic=result.mapped_topic,
@@ -97,36 +170,16 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
                 session_id=payload.session_id,
             )
 
-        # --- Cache lookup with strict similarity gating ---
-        # Build the embedding for the incoming query once (reuse the one from
-        # retrieval by re-embedding the same embed_text produced in retrieve()).
-        # We use the same embedding service so vectors are comparable.
-        query_embedding: list = services["retrieval"].embedding_service.embed_query(
-            services["retrieval"]._embedding_text(result.processed)
-        )
-
-        cached_answer = services["cache"].get_cached_answer(
+        stage_start = perf_counter()
+        answer = services["gemini"].generate_answer(payload.query, result.context)
+        timings["gemini_ms"] = _elapsed_ms(stage_start)
+        services["cache"].store_answer(
             topic=result.mapped_topic,
             query=payload.query,
+            answer=answer,
             query_embedding=query_embedding,
-            similarity_floor=services["settings"].cache_similarity_floor,
+            retrieval_score=result.quality.combined_confidence,
         )
-        cached = cached_answer is not None
-
-        if cached:
-            answer = cached_answer
-        else:
-            # Full RAG path: generate answer from validated context only.
-            answer = services["gemini"].generate_answer(payload.query, result.context)
-            # Store the answer with its embedding and retrieval score so future
-            # cache lookups can properly gate on query similarity.
-            services["cache"].store_answer(
-                topic=result.mapped_topic,
-                query=payload.query,
-                answer=answer,
-                query_embedding=query_embedding,
-                retrieval_score=result.quality.combined_confidence,
-            )
 
         services["analytics"].record(
             payload.query,
@@ -137,6 +190,8 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
         )
         services["alias_learning"].observe(result.processed.normalized, result.mapped_topic)
 
+        timings["total_ms"] = _elapsed_ms(total_start)
+        _log_query_timing(payload.query, False, timings)
         return ChatQueryResponse(
             answer=answer,
             mapped_topic=result.mapped_topic,
@@ -144,14 +199,18 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
             ticket_required=ticket_suggested,
             ticket_suggested=ticket_suggested,
             ticket_id=None,
-            cached=cached,
+            cached=False,
             sources=result.sources,
             session_id=payload.session_id,
         )
     except PyMongoError as exc:
+        timings["total_ms"] = _elapsed_ms(total_start)
+        _log_query_timing(payload.query, False, timings)
         logger.exception("Database error while processing query")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable") from exc
     except Exception as exc:
+        timings["total_ms"] = _elapsed_ms(total_start)
+        _log_query_timing(payload.query, False, timings)
         logger.exception("Unexpected error while processing query")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Query processing failed") from exc
 
@@ -379,3 +438,30 @@ def _database_status(services: dict) -> str:
     except Exception:
         logger.exception("MongoDB health check failed")
         return "unavailable"
+
+
+def _elapsed_ms(start: float) -> float:
+    return round((perf_counter() - start) * 1000, 2)
+
+
+def _cached_confidence(entry: dict, settings: Settings) -> ConfidenceResult:
+    score = float(entry.get("retrieval_score", 1.0))
+    label = "high" if score >= settings.high_confidence_threshold else "medium"
+    return ConfidenceResult(label=label, score=score, ticket_required=False)
+
+
+def _log_query_timing(query: str, cached: bool, timings: dict[str, float]) -> None:
+    logger.info(
+        "chat_query_timing cached=%s query_len=%d cache=%.2fms preprocess=%.2fms "
+        "embedding=%.2fms mongo_retrieval=%.2fms rerank_confidence=%.2fms "
+        "gemini=%.2fms total=%.2fms",
+        cached,
+        len(query),
+        timings.get("cache_lookup_ms", 0.0),
+        timings.get("preprocess_ms", 0.0),
+        timings.get("embedding_ms", 0.0),
+        timings.get("mongo_retrieval_ms", 0.0),
+        timings.get("rerank_confidence_ms", 0.0),
+        timings.get("gemini_ms", 0.0),
+        timings.get("total_ms", 0.0),
+    )

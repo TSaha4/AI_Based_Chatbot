@@ -134,6 +134,65 @@ class CacheService:
             )
         return best_answer
 
+    def get_equivalent_cached_response(
+        self,
+        query: str,
+        query_embedding: Optional[List[float]],
+        similarity_floor: float = _CACHE_SIMILARITY_FLOOR,
+    ) -> Optional[dict]:
+        """Return a validated cache entry before retrieval when possible."""
+        if query_embedding is None:
+            return None
+
+        candidates = list(
+            self.collection.find(
+                {"query_embedding": {"$type": "array"}},
+                sort=[("updated_at", -1)],
+                limit=50,
+            )
+        )
+        if not candidates:
+            return None
+
+        query_tokens = self._content_tokens(query)
+        query_numbers = self._numbers(query)
+        best_entry: Optional[dict] = None
+        best_similarity = -1.0
+
+        for entry in candidates:
+            if entry.get("retrieval_score", 1.0) < _CACHE_MIN_RETRIEVAL_SCORE:
+                continue
+
+            sample_query = str(entry.get("sample_query") or "")
+            sample_tokens = self._content_tokens(sample_query)
+            if query_tokens and sample_tokens:
+                token_overlap = self._token_overlap(query_tokens, sample_tokens)
+                if token_overlap < _CACHE_MIN_TOKEN_OVERLAP:
+                    continue
+
+            if query_numbers != self._numbers(sample_query):
+                continue
+
+            stored_embedding = entry.get("query_embedding")
+            if not stored_embedding or not isinstance(stored_embedding, list):
+                continue
+
+            similarity = self._cosine_similarity(query_embedding, stored_embedding)
+            if similarity >= similarity_floor and similarity > best_similarity:
+                best_similarity = similarity
+                best_entry = entry
+
+        if best_entry is None:
+            logger.debug("cache: pre-retrieval MISS")
+            return None
+
+        logger.debug(
+            "cache: pre-retrieval HIT topic=%r similarity=%.4f",
+            best_entry.get("topic"),
+            best_similarity,
+        )
+        return best_entry
+
     def store_answer(
         self,
         topic: Optional[str],

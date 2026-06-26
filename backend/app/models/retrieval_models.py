@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from app.models.response_models import SourceDocument
 from app.services.nlp_service import PreprocessedQuery
@@ -41,3 +41,5 @@ class RetrievalResult:
     context: List[str]
     mapped_topic: Optional[str]
     quality: RetrievalQuality
+    query_embedding: Optional[List[float]] = None
+    timings_ms: Optional[Dict[str, float]] = None

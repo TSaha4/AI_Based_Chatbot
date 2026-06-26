@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 from typing import List
 
 from google import genai
@@ -20,12 +21,17 @@ _GROUNDING_INSTRUCTIONS = (
 )
 
 
+@lru_cache
+def _get_client(api_key: str) -> genai.Client:
+    return genai.Client(api_key=api_key)
+
+
 class GeminiService:
     """Generates grounded answers from retrieved context only."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.client = genai.Client(api_key=settings.gemini_api_key) if settings.gemini_api_key else None
+        self.client = _get_client(settings.gemini_api_key) if settings.gemini_api_key else None
 
     def generate_answer(self, query: str, context: List[str]) -> str:
         if not context:
@@ -41,7 +47,10 @@ class GeminiService:
         response = self.client.models.generate_content(
             model=self.settings.gemini_model,
             contents=prompt,
-            config=types.GenerateContentConfig(temperature=self.settings.gemini_temperature),
+            config=types.GenerateContentConfig(
+                temperature=self.settings.gemini_temperature,
+                max_output_tokens=512,
+            ),
         )
         return (response.text or "").strip() or (
             "The knowledge base does not contain enough information to answer this question."

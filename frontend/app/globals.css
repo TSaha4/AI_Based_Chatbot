@@ -432,6 +432,15 @@
   .stagger-soft > *:nth-child(6) {
     animation-delay: 300ms;
   }
+
+  .ticket-card-dark {
+    background-color: #f9f0dd;
+  }
+}
+
+.dark .ticket-card-dark {
+  background-color: #16213e !important;
+  border-color: rgba(245, 158, 11, 0.22) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

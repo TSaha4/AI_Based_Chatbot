@@ -145,10 +145,10 @@ function ResponseFeedback({
 
   if (phase === "ticket_created" && ticketId) {
     return (
-      <div className="flex flex-col gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3">
-        <p className="text-sm font-medium text-foreground">Support ticket created successfully.</p>
-        <p className="text-sm text-muted-foreground">
-          Ticket ID: <span className="font-mono font-semibold text-foreground">{ticketId}</span>
+      <div className="flex flex-col gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3 dark:border-emerald-500/30 dark:bg-[#11241e]">
+        <p className="text-sm font-medium text-foreground dark:text-emerald-100">Support ticket created successfully.</p>
+        <p className="text-sm text-muted-foreground dark:text-emerald-300/80">
+          Ticket ID: <span className="font-mono font-semibold text-foreground dark:text-emerald-50">{ticketId}</span>
           {ticketStatus ? ` · Status: ${ticketStatus}` : null}
         </p>
       </div>
@@ -188,7 +188,7 @@ function ResponseFeedback({
           onChange={(event) => setEmail(event.target.value)}
           type="email"
           placeholder="you@example.com"
-          className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+          className="h-10 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-input dark:bg-slate-950 dark:text-foreground dark:placeholder:text-muted-foreground/50 dark:focus:border-primary dark:focus:ring-primary/30"
         />
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex flex-wrap gap-2">
@@ -343,19 +343,20 @@ function TicketCard({
       setSubmitting(false)
     }
   }
-
   return (
-    <Card className="border-amber-300 bg-amber-50 rounded-2xl rounded-tl-none shadow-sm">
+    <Card
+      className="ticket-card-dark rounded-2xl rounded-tl-none border-amber-200 bg-amber-50/60 text-amber-950 shadow-sm transition-colors dark:text-amber-50"
+    >
       <CardContent className="flex flex-col gap-4 p-5">
         <div className="flex items-start gap-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200">
             <ShieldQuestion className="size-4" aria-hidden="true" />
           </div>
           <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-semibold text-foreground">
+            <h3 className="text-sm font-semibold text-amber-950 dark:text-amber-300">
               {ticketId ? "Support Ticket Created" : "Support Ticket Suggested"}
             </h3>
-            <p className="text-sm leading-relaxed text-muted-foreground">
+            <p className="text-sm leading-relaxed text-amber-900/80 dark:text-amber-100">
               {ticketId
                 ? "The question has been forwarded for expert review."
                 : result.message ?? "Would you like to raise a support ticket for admin review?"}
@@ -365,7 +366,7 @@ function TicketCard({
 
         <ConfidenceMeter score={result.confidence} />
 
-        <Separator className="bg-amber-200" />
+        <Separator className="bg-amber-200 dark:bg-amber-500/20" />
 
         {!ticketId && !declined && (
           <div className="flex flex-col gap-3">
@@ -374,14 +375,24 @@ function TicketCard({
               onChange={(event) => setEmail(event.target.value)}
               type="email"
               placeholder="Enter your email"
-              className="h-10 rounded-md border border-amber-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-amber-300"
+              className="h-10 rounded-md border border-amber-200 bg-white px-3 text-sm text-amber-950 outline-none placeholder:text-amber-900/55 transition-all focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-amber-500/30 dark:bg-slate-950 dark:text-amber-50 dark:placeholder:text-amber-200/40 dark:focus:border-amber-500 dark:focus:ring-amber-500/25"
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={raiseTicket} disabled={!canSubmit || submitting}>
+              <Button
+                size="sm"
+                onClick={raiseTicket}
+                disabled={!canSubmit || submitting}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-medium border-transparent transition-all dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-amber-950 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+              >
                 {submitting ? "Creating..." : "Yes, raise ticket"}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setDeclined(true)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDeclined(true)}
+                className="border-amber-200 text-amber-900 hover:bg-amber-100 hover:text-amber-950 transition-all dark:border-amber-500/30 dark:text-amber-200 dark:hover:bg-amber-500/10 dark:hover:text-amber-100 cursor-pointer"
+              >
                 No
               </Button>
             </div>
@@ -389,33 +400,35 @@ function TicketCard({
         )}
 
         {declined && !ticketId && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-amber-900/75 dark:text-amber-200/75">
             No ticket was created.
           </p>
         )}
 
         {ticketId && <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="flex flex-col gap-0.5">
-            <dt className="text-xs font-medium text-muted-foreground">
+            <dt className="text-xs font-medium text-amber-900/70 dark:text-amber-300/70">
               Ticket ID
             </dt>
-            <dd className="font-mono text-sm font-semibold text-foreground">
+            <dd className="font-mono text-sm font-semibold text-amber-950 dark:text-amber-100">
               {ticketId}
             </dd>
           </div>
           <div className="flex flex-col gap-0.5">
-            <dt className="text-xs font-medium text-muted-foreground">
+            <dt className="text-xs font-medium text-amber-900/70 dark:text-amber-300/70">
               Status
             </dt>
             <dd>
-              <Badge variant="secondary">{status}</Badge>
+              <Badge variant="secondary" className="dark:bg-amber-500/15 dark:text-amber-200">
+                {status}
+              </Badge>
             </dd>
           </div>
           <div className="flex flex-col gap-0.5">
-            <dt className="text-xs font-medium text-muted-foreground">
+            <dt className="text-xs font-medium text-amber-900/70 dark:text-amber-300/70">
               Estimated Review Time
             </dt>
-            <dd className="text-sm font-medium text-foreground">
+            <dd className="text-sm font-medium text-amber-950 dark:text-amber-100">
               {result.estimatedReview}
             </dd>
           </div>

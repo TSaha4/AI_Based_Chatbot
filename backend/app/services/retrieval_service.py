@@ -1,5 +1,6 @@
 import logging
 import re
+from time import perf_counter
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -66,16 +67,40 @@ class RetrievalService:
         self.nlp_service = nlp_service
         self.embedding_service = embedding_service
 
-    def retrieve(self, query: str) -> RetrievalResult:
-        processed = self.nlp_service.preprocess(query)
-        embed_text = self._embedding_text(processed)
-        embedding = self.embedding_service.embed_query(embed_text)
+    def retrieve(
+        self,
+        query: str,
+        processed: Optional[PreprocessedQuery] = None,
+        embed_text: Optional[str] = None,
+        embedding: Optional[List[float]] = None,
+    ) -> RetrievalResult:
+        timings: Dict[str, float] = {}
+
+        if processed is None:
+            stage_start = perf_counter()
+            processed = self.nlp_service.preprocess(query)
+            timings["preprocess_ms"] = self._elapsed_ms(stage_start)
+        else:
+            timings["preprocess_ms"] = 0.0
+
+        if embed_text is None:
+            embed_text = self._embedding_text(processed)
+
+        if embedding is None:
+            stage_start = perf_counter()
+            embedding = self.embedding_service.embed_query(embed_text)
+            timings["embedding_ms"] = self._elapsed_ms(stage_start)
+        else:
+            timings["embedding_ms"] = 0.0
 
         candidate_limit = self.settings.retrieval_candidate_limit
+        mongo_start = perf_counter()
         knowledge = self._vector_search("knowledge_chunks", embedding, candidate_limit)
         resolutions = self._vector_search("admin_resolutions", embedding, candidate_limit)
         keyword_hits = self._keyword_search(processed)
+        timings["mongo_retrieval_ms"] = self._elapsed_ms(mongo_start)
 
+        rerank_start = perf_counter()
         candidates: List[tuple[str, dict]] = self._merge_candidates(
             [*knowledge, *resolutions, *keyword_hits],
             embedding,
@@ -97,6 +122,7 @@ class RetrievalService:
         quality = self._build_quality(processed, ranked, answerable_sources)
         mapped_topic = self._resolve_topic(processed, answerable_sources or sources)
         context = [source.preview for source in answerable_sources[: self.settings.top_k]]
+        timings["rerank_ms"] = self._elapsed_ms(rerank_start)
 
         self._log_retrieval_debug(query, processed, embed_text, ranked, quality)
 
@@ -106,6 +132,8 @@ class RetrievalService:
             context=context,
             mapped_topic=mapped_topic,
             quality=quality,
+            query_embedding=embedding,
+            timings_ms=timings,
         )
 
     def _embedding_text(self, processed: PreprocessedQuery) -> str:
@@ -428,3 +456,7 @@ class RetrievalService:
         logger.debug("retrieval_hybrid %s", payload)
         if self.settings.retrieval_debug:
             logger.info("retrieval_hybrid %s", payload)
+
+    @staticmethod
+    def _elapsed_ms(start: float) -> float:
+        return round((perf_counter() - start) * 1000, 2)
