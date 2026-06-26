@@ -39,17 +39,24 @@ class TicketService:
             query = {"$or": [{"ticket_id": ticket_id}, {"_id": ObjectId(ticket_id)}]}
         return self.collection.find_one(query)
 
-    def mark_resolved(self, ticket_id: str) -> Optional[dict]:
+    def mark_resolved(self, ticket_id: str, email_sent: bool | None = None) -> Optional[dict]:
         now = datetime.now(timezone.utc)
         ticket = self.get_ticket(ticket_id)
         if not ticket:
             return None
+
+        update_fields = {"status": "resolved", "resolved_at": now}
+        if email_sent is not None:
+            update_fields["email_sent"] = email_sent
+
         self.collection.update_one(
             {"_id": ticket["_id"]},
-            {"$set": {"status": "resolved", "resolved_at": now}},
+            {"$set": update_fields},
         )
         ticket["status"] = "resolved"
         ticket["resolved_at"] = now
+        if email_sent is not None:
+            ticket["email_sent"] = email_sent
         return ticket
 
     @staticmethod

@@ -79,11 +79,17 @@ class AdminResolveTicketResponse(BaseModel):
     resolved_at: datetime
 
 
+# ---------------------------
+# ADMIN LOGIN RESPONSE
+# ---------------------------
 class AdminLoginResponse(BaseModel):
     authenticated: bool
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
+
     admin_id: Optional[str] = None
-    name: Optional[str] = None
-    email: Optional[str] = None
+    username: Optional[str] = None
+    role: Optional[str] = None
 
 
 class UploadResponse(BaseModel):

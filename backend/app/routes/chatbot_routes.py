@@ -217,7 +217,7 @@ def resolve_ticket(
         payload.answer,
         canonical_ticket_id,
     )
-    updated = services["tickets"].mark_resolved(canonical_ticket_id)
+    updated = services["tickets"].mark_resolved(canonical_ticket_id, email_sent=email_sent)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
 
