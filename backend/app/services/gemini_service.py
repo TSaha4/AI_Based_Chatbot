@@ -55,3 +55,28 @@ class GeminiService:
         return (response.text or "").strip() or (
             "The knowledge base does not contain enough information to answer this question."
         )
+
+    def rewrite_search_queries(self, query: str) -> List[str]:
+        if not self.client:
+            return []
+
+        prompt = (
+            "Rewrite the user question for strict RAG retrieval only.\n"
+            "Return 3 to 5 short search queries or keyword phrases, one per line.\n"
+            "Do not answer the question. Do not add facts.\n\n"
+            f"User question: {query}"
+        )
+        response = self.client.models.generate_content(
+            model=self.settings.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+                max_output_tokens=96,
+            ),
+        )
+        lines = []
+        for line in (response.text or "").splitlines():
+            cleaned = line.strip(" -•\t0123456789.")
+            if cleaned:
+                lines.append(cleaned[:120])
+        return lines[:5]

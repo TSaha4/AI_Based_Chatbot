@@ -11,13 +11,12 @@ logger = logging.getLogger(__name__)
 
 # Minimum cosine similarity between the incoming query embedding and the
 # cached query embedding for a cache hit to be accepted.
-# 0.92 means only near-identical phrasings reuse the cached answer.
-_CACHE_SIMILARITY_FLOOR = 0.92
+# 0.86 accepts semantically equivalent phrasings while avoiding loose topic hits.
+_CACHE_SIMILARITY_FLOOR = 0.86
 
 # Hard minimum combined retrieval score the cached entry must have had
 # to be eligible at all. Entries stored from weak retrievals are skipped.
 _CACHE_MIN_RETRIEVAL_SCORE = 0.50
-_CACHE_MIN_TOKEN_OVERLAP = 0.55
 _CACHE_STOPWORDS = {
     "a", "an", "the", "is", "are", "am", "to", "of", "in", "on", "for",
     "and", "or", "with", "by", "from", "can", "could", "should", "would",
@@ -76,8 +75,8 @@ class CacheService:
 
         best_answer: Optional[str] = None
         best_similarity: float = -1.0
-        query_tokens = self._content_tokens(query or "")
         query_numbers = self._numbers(query or "")
+        query_entities = self._entities(query or "")
 
         for entry in candidates:
             # Skip entries that were stored from low-quality retrievals
@@ -96,20 +95,12 @@ class CacheService:
                 continue
 
             sample_query = str(entry.get("sample_query") or "")
-            if query_tokens and sample_query:
-                sample_tokens = self._content_tokens(sample_query)
-                token_overlap = self._token_overlap(query_tokens, sample_tokens)
-                if token_overlap < _CACHE_MIN_TOKEN_OVERLAP:
-                    logger.debug(
-                        "cache: skipping different query wording (overlap=%.3f) for topic=%r",
-                        token_overlap,
-                        topic,
-                    )
-                    continue
-
             sample_numbers = self._numbers(sample_query)
             if query_numbers != sample_numbers:
                 logger.debug("cache: skipping numeric mismatch for topic=%r", topic)
+                continue
+            if self._entity_mismatch(query_entities, self._entities(sample_query)):
+                logger.debug("cache: skipping entity mismatch for topic=%r", topic)
                 continue
 
             similarity = self._cosine_similarity(query_embedding, stored_embedding)
@@ -154,8 +145,8 @@ class CacheService:
         if not candidates:
             return None
 
-        query_tokens = self._content_tokens(query)
         query_numbers = self._numbers(query)
+        query_entities = self._entities(query)
         best_entry: Optional[dict] = None
         best_similarity = -1.0
 
@@ -164,13 +155,9 @@ class CacheService:
                 continue
 
             sample_query = str(entry.get("sample_query") or "")
-            sample_tokens = self._content_tokens(sample_query)
-            if query_tokens and sample_tokens:
-                token_overlap = self._token_overlap(query_tokens, sample_tokens)
-                if token_overlap < _CACHE_MIN_TOKEN_OVERLAP:
-                    continue
-
             if query_numbers != self._numbers(sample_query):
+                continue
+            if self._entity_mismatch(query_entities, self._entities(sample_query)):
                 continue
 
             stored_embedding = entry.get("query_embedding")
@@ -258,12 +245,18 @@ class CacheService:
         }
 
     @staticmethod
-    def _token_overlap(left: set[str], right: set[str]) -> float:
-        if not left or not right:
-            return 0.0
-        return len(left & right) / len(left | right)
-
-    @staticmethod
     def _numbers(query: str) -> tuple[str, ...]:
         normalized = re.sub(r"(?<=\d),(?=\d)", "", query.lower())
         return tuple(re.findall(r"\b\d+(?:\.\d+)?\b", normalized))
+
+    @staticmethod
+    def _entities(query: str) -> set[str]:
+        return {
+            token.upper()
+            for token in re.findall(r"\b(?:[A-Z]{2,}|[A-Z][a-z]{2,})\b", query)
+            if token.lower() not in _CACHE_STOPWORDS
+        }
+
+    @staticmethod
+    def _entity_mismatch(left: set[str], right: set[str]) -> bool:
+        return bool(left and right and left.isdisjoint(right))

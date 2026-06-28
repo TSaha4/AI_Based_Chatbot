@@ -15,52 +15,37 @@ class ConfidenceService:
         keyword = quality.keyword_score or 0.0
         context = quality.context_keyword_score or 0.0
 
-        # Semantic similarity should dominate confidence.
-        score = (semantic * 0.80) + (context * 0.15) + (keyword * 0.05)
-
-        # Penalize weak semantic matches heavily.
-        if semantic < 0.30:
-            score *= 0.20
-
-        # Completely unrelated queries should stay below ~10%.
-        if semantic < 0.20:
-            score = min(score, 0.08)
-
-        # Keep score within [0, 1]
+        # Semantic similarity dominates the confidence score
+        score = (semantic * 0.90) + (context * 0.10)
         score = max(0.0, min(score, 1.0))
 
-        relevance = max(keyword, context)
-
-        # Retrieval itself indicates the answer is unreliable.
-        if not quality.answerable or quality.weak_retrieval:
+        # If retriever determined no evidence exists, trigger ticket creation
+        if not quality.answerable:
             return ConfidenceResult(
                 label="low",
                 score=score,
                 ticket_required=True,
             )
 
-        # High confidence requires BOTH strong semantic similarity
-        # and sufficient contextual relevance.
-        if (
-            semantic >= 0.85
-            and relevance >= self.settings.min_high_confidence_keyword_score
-            and score >= self.settings.high_confidence_threshold
-        ):
+        # Classify confidence label based primarily on embedding similarity
+        # High: solid semantic match
+        if semantic >= 0.80 or (score >= 0.80 and semantic >= 0.75):
             return ConfidenceResult(
                 label="high",
                 score=score,
                 ticket_required=False,
             )
-
-        if score >= self.settings.medium_confidence_threshold:
+        # Medium: moderate semantic match
+        elif semantic >= 0.65 or (score >= 0.65 and semantic >= 0.60):
             return ConfidenceResult(
                 label="medium",
                 score=score,
                 ticket_required=False,
             )
-
-        return ConfidenceResult(
-            label="low",
-            score=score,
-            ticket_required=True,
-        )
+        # Low: borderline/weak match but evidence exists
+        else:
+            return ConfidenceResult(
+                label="low",
+                score=score,
+                ticket_required=False,
+            )

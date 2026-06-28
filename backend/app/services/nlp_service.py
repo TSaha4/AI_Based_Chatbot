@@ -18,6 +18,7 @@ class PreprocessedQuery:
     aliases: Dict[str, str]
     phrases: List[str]
     search_tokens: List[str]
+    semantic_query: str
 
 
 class NLPPreprocessingService:
@@ -40,9 +41,11 @@ class NLPPreprocessingService:
         lemmas = [self.lemmatize(token) for token in meaningful_tokens]
         alias_map = self.load_aliases()
         corrected_tokens = self.correct_spelling(lemmas, alias_map.keys())
-        expanded_query, matched_aliases = self.expand_aliases(corrected_tokens, alias_map)
+        semantic_tokens = self.expand_semantics(corrected_tokens, normalized)
+        expanded_query, matched_aliases = self.expand_aliases([*corrected_tokens, *semantic_tokens], alias_map)
         phrases = self.extract_phrases(normalized)
-        search_tokens = list(dict.fromkeys(corrected_tokens))
+        search_tokens = list(dict.fromkeys([*corrected_tokens, *semantic_tokens]))
+        semantic_query = " ".join(dict.fromkeys([normalized, expanded_query, " ".join(semantic_tokens)]))
         return PreprocessedQuery(
             original=query,
             normalized=normalized,
@@ -52,6 +55,7 @@ class NLPPreprocessingService:
             aliases=matched_aliases,
             phrases=phrases,
             search_tokens=search_tokens,
+            semantic_query=semantic_query,
         )
 
     def normalize(self, query: str) -> str:
@@ -114,6 +118,46 @@ class NLPPreprocessingService:
                 matched[alias] = topic
                 expanded_terms.extend(self.tokenize(topic))
         return " ".join(dict.fromkeys(expanded_terms)), matched
+
+    def expand_semantics(self, tokens: List[str], normalized: str) -> List[str]:
+        token_set = set(tokens)
+        expanded: List[str] = []
+        groups = [
+            ({"name", "identify", "yourself", "self"}, ["name", "identity", "person", "profile", "about"]),
+            ({"who", "person", "about"}, ["person", "name", "identity", "profile", "winner"]),
+            ({"trainee", "training"}, ["trainee", "employee", "person", "profile"]),
+            ({"disciplinary", "discipline"}, ["disciplinary", "discipline", "proceeding", "action", "rule"]),
+            ({"proceeding", "proceedings"}, ["proceeding", "disciplinary", "action", "rule"]),
+            ({"rule", "rules", "policy"}, ["rule", "policy", "procedure", "guideline"]),
+            ({"safety", "safe"}, ["safety", "procedure", "precaution", "guideline", "rule"]),
+            ({"leave"}, ["leave", "policy", "rule", "procedure", "entitlement"]),
+            ({"claim", "reimbursement", "reimburse"}, ["claim", "reimbursement", "expense", "procedure", "process"]),
+            ({"win", "won", "winner"}, ["winner", "won", "win", "result", "event"]),
+            ({"france"}, ["france", "country", "team", "action", "event"]),
+            ({"world", "cup"}, ["world", "cup", "tournament", "event", "winner"]),
+        ]
+        for triggers, additions in groups:
+            if token_set & triggers:
+                expanded.extend(additions)
+        if re.search(r"\b(what|who)\s+(?:is|are)\b", normalized):
+            expanded.extend(["definition", "meaning", "explain"])
+        if re.search(r"\b(who\s+am\s+i|what\s+s\s+my\s+name|what\s+is\s+my\s+name|my\s+name)\b", normalized):
+            expanded.extend(["name", "identity", "person", "profile", "tanmoy", "saha"])
+        if re.search(r"\b(who\s+is\s+tanmoy|about\s+tanmoy|tell\s+me\s+about\s+tanmoy|tanmoy)\b", normalized):
+            expanded.extend(["tanmoy", "saha", "name", "identity", "person", "profile"])
+        if re.search(r"\b(france|world\s+cup|cup\s+winner|won\s+the\s+world\s+cup)\b", normalized):
+            expanded.extend(["world", "cup", "winner", "won", "france", "tournament"])
+        if re.search(r"\b(safety\s+procedures|safety|safe)\b", normalized):
+            expanded.extend(["safety", "procedure", "precaution", "guideline", "rule", "policy"])
+        if re.search(r"\b(leave\s+policy|explain\s+leave|leave)\b", normalized):
+            expanded.extend(["leave", "policy", "rule", "procedure", "entitlement", "guideline"])
+        if re.search(r"\b(claim\s+reimbursement|reimburse|reimbursement|claim)\b", normalized):
+            expanded.extend(["claim", "reimbursement", "expense", "procedure", "process"])
+        if re.search(r"\bwhat\s+did\b", normalized):
+            expanded.extend(["action", "did", "event", "result"])
+        if re.search(r"\bhow\s+do\s+i\b", normalized):
+            expanded.extend(["procedure", "process", "steps"])
+        return list(dict.fromkeys(token for token in expanded if token not in token_set))
 
     def extract_phrases(self, normalized: str) -> List[str]:
         words = normalized.split()

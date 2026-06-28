@@ -164,7 +164,7 @@ class Settings(BaseSettings):
     # CACHE
     # =========================
 
-    cache_similarity_floor: float = Field(default=0.92, ge=0, le=1)
+    cache_similarity_floor: float = Field(default=0.86, ge=0, le=1)
 
     alias_learning_min_frequency: int = Field(default=3, ge=1)
 

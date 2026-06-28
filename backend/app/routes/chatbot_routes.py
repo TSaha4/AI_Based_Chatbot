@@ -80,11 +80,25 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
         stage_start = perf_counter()
         processed = retrieval.nlp_service.preprocess(payload.query)
         timings["preprocess_ms"] = _elapsed_ms(stage_start)
+        logger.info(
+            "rag_query_start query=%r normalized=%r tokens=%s aliases=%s phrases=%s",
+            payload.query,
+            processed.normalized,
+            processed.search_tokens,
+            processed.aliases,
+            processed.phrases[:5],
+        )
 
         embed_text = retrieval._embedding_text(processed)
         stage_start = perf_counter()
         query_embedding = retrieval.embedding_service.embed_query(embed_text)
         timings["embedding_ms"] = _elapsed_ms(stage_start)
+        logger.info(
+            "rag_embedding_ready query=%r embed_text=%r embedding_dims=%d",
+            payload.query,
+            embed_text[:240],
+            len(query_embedding),
+        )
 
         stage_start = perf_counter()
         cached_entry = services["cache"].get_equivalent_cached_response(
@@ -93,11 +107,24 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
             similarity_floor=settings.cache_similarity_floor,
         )
         timings["cache_lookup_ms"] = _elapsed_ms(stage_start)
+        logger.info(
+            "rag_cache_lookup query=%r hit=%s lookup_ms=%.2f",
+            payload.query,
+            cached_entry is not None,
+            timings["cache_lookup_ms"],
+        )
 
         if cached_entry is not None:
             answer = cached_entry.get("answer") or ""
             mapped_topic = cached_entry.get("topic")
             confidence = _cached_confidence(cached_entry, settings)
+            logger.info(
+                "rag_cache_hit query=%r topic=%r confidence_label=%s confidence_score=%.3f",
+                payload.query,
+                mapped_topic,
+                confidence.label,
+                confidence.score,
+            )
             services["analytics"].record(
                 payload.query,
                 mapped_topic,
@@ -133,6 +160,56 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
             embed_text=embed_text,
             embedding=query_embedding,
         )
+        logger.info(
+            "rag_retrieval_result query=%r topic=%r sources=%d context=%d vector=%.3f keyword=%.3f combined=%.3f answerable=%s weak=%s",
+            payload.query,
+            result.mapped_topic,
+            len(result.sources),
+            len(result.context),
+            result.quality.vector_score,
+            result.quality.keyword_score,
+            result.quality.combined_score,
+            result.quality.answerable,
+            result.quality.weak_retrieval,
+        )
+        if _should_rewrite_query(result.quality):
+            stage_start = perf_counter()
+            rewrites = services["gemini"].rewrite_search_queries(payload.query)
+            timings["query_rewrite_ms"] = _elapsed_ms(stage_start)
+            logger.info(
+                "rag_query_rewrite query=%r rewrites=%s rewrite_ms=%.2f",
+                payload.query,
+                rewrites,
+                timings["query_rewrite_ms"],
+            )
+            if rewrites:
+                rewritten_query = " ".join([payload.query, *rewrites])
+                rewritten_processed = retrieval.nlp_service.preprocess(rewritten_query)
+                rewritten_embed_text = retrieval._embedding_text(rewritten_processed)
+                rewritten_embedding = retrieval.embedding_service.embed_query(rewritten_embed_text)
+                rewritten_result = retrieval.retrieve(
+                    payload.query,
+                    processed=rewritten_processed,
+                    embed_text=rewritten_embed_text,
+                    embedding=rewritten_embedding,
+                )
+                if rewritten_result.quality.combined_score > result.quality.combined_score:
+                    logger.info(
+                        "rag_query_rewrite_accepted query=%r old_combined=%.3f new_combined=%.3f old_context=%d new_context=%d",
+                        payload.query,
+                        result.quality.combined_score,
+                        rewritten_result.quality.combined_score,
+                        len(result.context),
+                        len(rewritten_result.context),
+                    )
+                    result = rewritten_result
+                else:
+                    logger.info(
+                        "rag_query_rewrite_rejected query=%r old_combined=%.3f new_combined=%.3f",
+                        payload.query,
+                        result.quality.combined_score,
+                        rewritten_result.quality.combined_score,
+                    )
         retrieval_timings = result.timings_ms or {}
         timings["mongo_retrieval_ms"] = retrieval_timings.get("mongo_retrieval_ms", 0.0)
         timings["rerank_confidence_ms"] = retrieval_timings.get("rerank_ms", 0.0)
@@ -146,10 +223,27 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
             2,
         )
         ticket_suggested = confidence.ticket_required
+        logger.info(
+            "rag_confidence query=%r label=%s score=%.3f ticket_required=%s vector=%.3f keyword=%.3f context_keyword=%.3f",
+            payload.query,
+            confidence.label,
+            confidence.score,
+            confidence.ticket_required,
+            result.quality.vector_score,
+            result.quality.keyword_score,
+            result.quality.context_keyword_score,
+        )
 
         # When retrieval is too weak, skip both cache and Gemini; the mapped
         # topic is unreliable and could produce a wrong cached answer.
         if ticket_suggested:
+            logger.info(
+                "rag_ticket_flow query=%r topic=%r reason=low_confidence sources=%d context=%d",
+                payload.query,
+                result.mapped_topic,
+                len(result.sources),
+                len(result.context),
+            )
             weak_retrieval_message = (
                 "The knowledge base does not contain sufficient information to answer this question. "
                 "Would you like to raise a support ticket for admin review?"
@@ -170,8 +264,21 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
             )
 
         stage_start = perf_counter()
+        logger.info(
+            "rag_gemini_answer_start query=%r topic=%r context=%d",
+            payload.query,
+            result.mapped_topic,
+            len(result.context),
+        )
         answer = services["gemini"].generate_answer(payload.query, result.context)
         timings["gemini_ms"] = _elapsed_ms(stage_start)
+        logger.info(
+            "rag_gemini_answer_done query=%r topic=%r answer_chars=%d gemini_ms=%.2f",
+            payload.query,
+            result.mapped_topic,
+            len(answer),
+            timings["gemini_ms"],
+        )
         services["cache"].store_answer(
             topic=result.mapped_topic,
             query=payload.query,
@@ -447,6 +554,14 @@ def _cached_confidence(entry: dict, settings: Settings) -> ConfidenceResult:
     score = float(entry.get("retrieval_score", 1.0))
     label = "high" if score >= settings.high_confidence_threshold else "medium"
     return ConfidenceResult(label=label, score=score, ticket_required=False)
+
+
+def _should_rewrite_query(quality) -> bool:
+    return (
+        0.35 <= quality.combined_score <= 0.75
+        and quality.vector_score >= 0.45
+        and quality.context_keyword_score < 0.60
+    )
 
 
 def _log_query_timing(query: str, cached: bool, timings: dict[str, float]) -> None:

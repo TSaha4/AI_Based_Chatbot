@@ -3,6 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from pymongo.database import Database
+from pymongo.write_concern import WriteConcern
 
 from app.services.embedding_service import EmbeddingService
 
@@ -41,7 +42,9 @@ class KnowledgeIngestionService:
             }
             for chunk in chunks
         ]
-        self.collection.insert_many(documents)
+        result = self.collection.with_options(write_concern=WriteConcern(w="majority")).insert_many(documents)
+        if not result.acknowledged:
+            return 0
         return len(documents)
 
     @staticmethod
