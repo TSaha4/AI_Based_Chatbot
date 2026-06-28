@@ -137,6 +137,24 @@ function RootComponent() {
 function RootComponentInner() {
   const { queryClient } = Route.useRouteContext();
   const [collapsed, setCollapsed] = useState(false);
+  const [adminName, setAdminName] = useState("NTPC Administrator");
+
+  useEffect(() => {
+    const storedName = localStorage.getItem("admin_name");
+    if (storedName) {
+      setAdminName(storedName);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setAdminName(localStorage.getItem("admin_name") || "NTPC Administrator");
+    };
+    window.addEventListener("admin-profile-update", handleUpdate);
+    return () => {
+      window.removeEventListener("admin-profile-update", handleUpdate);
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -152,7 +170,7 @@ function RootComponentInner() {
         </div>
         <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopNavbar adminName="Admin" />
+          <TopNavbar adminName={adminName} />
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>

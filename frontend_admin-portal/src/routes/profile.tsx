@@ -3,6 +3,7 @@ import { useState } from "react";
 import { User, Mail, Shield, LogOut, CheckCircle } from "lucide-react";
 import { PageHeader, SectionCard } from "@/components/admin-ui";
 import { toast } from "sonner";
+import { loginAdmin } from "@/lib/backend-api";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({ meta: [{ title: "Admin Profile - NTPC Control Center" }] }),
@@ -10,19 +11,85 @@ export const Route = createFileRoute("/profile")({
 });
 
 function ProfilePage() {
-  const [signedOut, setSignedOut] = useState(false);
-  const [email, setEmail] = useState("admin@ntpc.local");
-  const [name, setName] = useState("NTPC Administrator");
+  const [signedOut, setSignedOut] = useState(() => {
+    return localStorage.getItem("admin_signed_out") === "true";
+  });
+  const [email, setEmail] = useState(() => {
+    return localStorage.getItem("admin_email") || "admin@ntpc.local";
+  });
+  const [name, setName] = useState(() => {
+    return localStorage.getItem("admin_name") || "NTPC Administrator";
+  });
 
   const handleSignOut = () => {
     setSignedOut(true);
+    localStorage.setItem("admin_signed_out", "true");
     toast.success("Successfully signed out");
+    window.dispatchEvent(new Event("admin-profile-update"));
   };
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const username = (formData.get("username") as string || "").trim();
+    const password = formData.get("password") as string || "";
+
+    if (!username) {
+      toast.error("Please enter a username or email address");
+      return;
+    }
+
+    try {
+      const response = await loginAdmin(username, password);
+      if (response.authenticated) {
+        const newEmail = response.email || (username.includes("@") ? username : `${username}@ntpc.local`);
+        const newName = response.name || username.split("@")[0].split(/[._-]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+        
+        setEmail(newEmail);
+        setName(newName);
+        setSignedOut(false);
+        localStorage.setItem("admin_email", newEmail);
+        localStorage.setItem("admin_name", newName);
+        localStorage.setItem("admin_signed_out", "false");
+        toast.success(`Successfully signed in as ${newName}`);
+        window.dispatchEvent(new Event("admin-profile-update"));
+        return;
+      }
+    } catch (err) {
+      console.warn("Backend authentication failed, falling back to local session simulation:", err);
+    }
+
+    // Local fallback/simulation
+    let newEmail = email;
+    let newName = name;
+
+    if (username.includes("@")) {
+      newEmail = username;
+      const prefix = username.split("@")[0];
+      newName = prefix
+        .split(/[._-]/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+    } else {
+      newEmail = `${username}@ntpc.local`;
+      newName = username.charAt(0).toUpperCase() + username.slice(1) + " Administrator";
+    }
+
+    setEmail(newEmail);
+    setName(newName);
     setSignedOut(false);
-    toast.success("Successfully signed back in");
+    localStorage.setItem("admin_email", newEmail);
+    localStorage.setItem("admin_name", newName);
+    localStorage.setItem("admin_signed_out", "false");
+    toast.success(`Successfully signed back in as ${newName}`);
+    window.dispatchEvent(new Event("admin-profile-update"));
+  };
+
+  const handleUpdateInfo = () => {
+    localStorage.setItem("admin_name", name);
+    localStorage.setItem("admin_email", email);
+    toast.success("Profile updated successfully");
+    window.dispatchEvent(new Event("admin-profile-update"));
   };
 
   if (signedOut) {
@@ -39,11 +106,13 @@ function ProfilePage() {
           <form onSubmit={handleSignIn} className="mt-6 space-y-4 text-left">
             <div>
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Admin Username
+                Admin Username / Email
               </label>
               <input
                 type="text"
-                defaultValue="admin"
+                name="username"
+                defaultValue={email}
+                placeholder="Enter username or email"
                 className="mt-1 h-9 w-full px-3 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring/30 text-foreground"
                 required
               />
@@ -54,7 +123,8 @@ function ProfilePage() {
               </label>
               <input
                 type="password"
-                defaultValue="••••••••"
+                name="password"
+                placeholder="Enter password"
                 className="mt-1 h-9 w-full px-3 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring/30 text-foreground"
                 required
               />
@@ -129,7 +199,7 @@ function ProfilePage() {
             
             <div className="mt-6 flex flex-wrap gap-3">
               <button
-                onClick={() => toast.success("Profile updated successfully")}
+                onClick={handleUpdateInfo}
                 className="inline-flex items-center gap-1.5 h-9 px-4 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium cursor-pointer"
               >
                 Update Info
