@@ -5,10 +5,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pymongo.errors import PyMongoError
+from google.genai.errors import APIError
 
 from app.config.settings import Settings, get_settings
 from app.database.mongo_client import get_database
-from app.models.request_models import AdminLoginRequest, AdminResolveTicketRequest, ChatQueryRequest, TicketCreateRequest
+from app.models.request_models import AdminLoginRequest, AdminSignupRequest, AdminResolveTicketRequest, ChatQueryRequest, TicketCreateRequest
 from app.models.response_models import (
     AdminLoginResponse,
     AdminResolveTicketResponse,
@@ -142,12 +143,14 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
                 }
             )
             _log_query_timing(payload.query, True, timings)
+            fallback_msg = "The knowledge base does not contain enough information to answer this question."
+            is_fallback = fallback_msg in answer or answer.strip().startswith(fallback_msg)
             return ChatQueryResponse(
                 answer=answer,
                 mapped_topic=mapped_topic,
                 confidence=confidence,
-                ticket_required=False,
-                ticket_suggested=False,
+                ticket_required=is_fallback,
+                ticket_suggested=is_fallback,
                 ticket_id=None,
                 cached=True,
                 sources=[],
@@ -173,43 +176,49 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
             result.quality.weak_retrieval,
         )
         if _should_rewrite_query(result.quality):
+            logger.info("rag_query_rewrite_started query=%r", payload.query)
             stage_start = perf_counter()
-            rewrites = services["gemini"].rewrite_search_queries(payload.query)
-            timings["query_rewrite_ms"] = _elapsed_ms(stage_start)
-            logger.info(
-                "rag_query_rewrite query=%r rewrites=%s rewrite_ms=%.2f",
-                payload.query,
-                rewrites,
-                timings["query_rewrite_ms"],
-            )
-            if rewrites:
-                rewritten_query = " ".join([payload.query, *rewrites])
-                rewritten_processed = retrieval.nlp_service.preprocess(rewritten_query)
-                rewritten_embed_text = retrieval._embedding_text(rewritten_processed)
-                rewritten_embedding = retrieval.embedding_service.embed_query(rewritten_embed_text)
-                rewritten_result = retrieval.retrieve(
-                    payload.query,
-                    processed=rewritten_processed,
-                    embed_text=rewritten_embed_text,
-                    embedding=rewritten_embedding,
-                )
-                if rewritten_result.quality.combined_score > result.quality.combined_score:
-                    logger.info(
-                        "rag_query_rewrite_accepted query=%r old_combined=%.3f new_combined=%.3f old_context=%d new_context=%d",
+            try:
+                rewrites = services["gemini"].rewrite_search_queries(payload.query)
+                timings["query_rewrite_ms"] = _elapsed_ms(stage_start)
+                if rewrites:
+                    rewritten_query = " ".join([payload.query, *rewrites])
+                    rewritten_processed = retrieval.nlp_service.preprocess(rewritten_query)
+                    rewritten_embed_text = retrieval._embedding_text(rewritten_processed)
+                    rewritten_embedding = retrieval.embedding_service.embed_query(rewritten_embed_text)
+                    rewritten_result = retrieval.retrieve(
                         payload.query,
-                        result.quality.combined_score,
-                        rewritten_result.quality.combined_score,
-                        len(result.context),
-                        len(rewritten_result.context),
+                        processed=rewritten_processed,
+                        embed_text=rewritten_embed_text,
+                        embedding=rewritten_embedding,
                     )
-                    result = rewritten_result
+                    if rewritten_result.quality.combined_score > result.quality.combined_score:
+                        logger.info(
+                            "rag_query_rewrite_used query=%r old_combined=%.3f new_combined=%.3f old_context=%d new_context=%d",
+                            payload.query,
+                            result.quality.combined_score,
+                            rewritten_result.quality.combined_score,
+                            len(result.context),
+                            len(rewritten_result.context),
+                        )
+                        result = rewritten_result
+                    else:
+                        logger.info(
+                            "rag_query_rewrite_rejected query=%r old_combined=%.3f new_combined=%.3f",
+                            payload.query,
+                            result.quality.combined_score,
+                            rewritten_result.quality.combined_score,
+                        )
                 else:
-                    logger.info(
-                        "rag_query_rewrite_rejected query=%r old_combined=%.3f new_combined=%.3f",
-                        payload.query,
-                        result.quality.combined_score,
-                        rewritten_result.quality.combined_score,
-                    )
+                    logger.info("rag_query_rewrite_rejected query=%r reason=empty_rewrites", payload.query)
+            except Exception as exc:
+                logger.error(
+                    "Query rewriting failed due to Gemini error: %s. Proceeding with original query.",
+                    str(exc),
+                    exc_info=True,
+                )
+        else:
+            logger.info("rag_query_rewrite_skipped reason=good_retrieval query=%r", payload.query)
         retrieval_timings = result.timings_ms or {}
         timings["mongo_retrieval_ms"] = retrieval_timings.get("mongo_retrieval_ms", 0.0)
         timings["rerank_confidence_ms"] = retrieval_timings.get("rerank_ms", 0.0)
@@ -270,22 +279,62 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
             result.mapped_topic,
             len(result.context),
         )
-        answer = services["gemini"].generate_answer(payload.query, result.context)
-        timings["gemini_ms"] = _elapsed_ms(stage_start)
-        logger.info(
-            "rag_gemini_answer_done query=%r topic=%r answer_chars=%d gemini_ms=%.2f",
-            payload.query,
-            result.mapped_topic,
-            len(answer),
-            timings["gemini_ms"],
-        )
-        services["cache"].store_answer(
-            topic=result.mapped_topic,
-            query=payload.query,
-            answer=answer,
-            query_embedding=query_embedding,
-            retrieval_score=result.quality.combined_confidence,
-        )
+        
+        gemini_failed = False
+        gemini_failure_reason = None
+        gemini_status_code = None
+        gemini_retry_after = None
+
+        try:
+            answer = services["gemini"].generate_answer(payload.query, result.context)
+            timings["gemini_ms"] = _elapsed_ms(stage_start)
+            logger.info(
+                "rag_gemini_answer_done query=%r topic=%r answer_chars=%d gemini_ms=%.2f",
+                payload.query,
+                result.mapped_topic,
+                len(answer),
+                timings["gemini_ms"],
+            )
+            services["cache"].store_answer(
+                topic=result.mapped_topic,
+                query=payload.query,
+                answer=answer,
+                query_embedding=query_embedding,
+                retrieval_score=result.quality.combined_confidence,
+            )
+        except APIError as exc:
+            gemini_failed = True
+            gemini_failure_reason = exc.message or str(exc)
+            gemini_status_code = getattr(exc, "code", None)
+            
+            # Check for retry-after in headers or message
+            if hasattr(exc, "response") and exc.response is not None:
+                headers = getattr(exc.response, "headers", {})
+                gemini_retry_after = headers.get("retry-after") or headers.get("Retry-After")
+            
+            logger.error(
+                "Gemini API failure: gemini_failure_reason=%r status_code=%s retry_after=%s",
+                gemini_failure_reason,
+                gemini_status_code,
+                gemini_retry_after,
+            )
+        except Exception as exc:
+            gemini_failed = True
+            gemini_failure_reason = str(exc)
+            gemini_status_code = getattr(exc, "status_code", 500)
+            
+            logger.error(
+                "Unexpected Gemini exception: gemini_failure_reason=%r status_code=%s",
+                gemini_failure_reason,
+                gemini_status_code,
+                exc_info=True,
+            )
+
+        if gemini_failed:
+            answer = "Relevant information was found, but AI answer generation is temporarily unavailable. Please try again shortly."
+            answer_generated = False
+        else:
+            answer_generated = True
 
         services["analytics"].record(
             payload.query,
@@ -298,16 +347,19 @@ def query_chatbot(payload: ChatQueryRequest, services: Annotated[dict, Depends(g
 
         timings["total_ms"] = _elapsed_ms(total_start)
         _log_query_timing(payload.query, False, timings)
+        fallback_msg = "The knowledge base does not contain enough information to answer this question."
+        is_fallback = fallback_msg in answer or answer.strip().startswith(fallback_msg)
         return ChatQueryResponse(
             answer=answer,
             mapped_topic=result.mapped_topic,
             confidence=confidence,
-            ticket_required=ticket_suggested,
-            ticket_suggested=ticket_suggested,
+            ticket_required=ticket_suggested or is_fallback,
+            ticket_suggested=ticket_suggested or is_fallback,
             ticket_id=None,
             cached=False,
             sources=result.sources,
             session_id=payload.session_id,
+            answer_generated=answer_generated,
         )
     except PyMongoError as exc:
         timings["total_ms"] = _elapsed_ms(total_start)
@@ -340,19 +392,71 @@ def admin_login(payload: AdminLoginRequest, services: Annotated[dict, Depends(ge
     credential = payload.username.strip()
     admin = services["db"].admins.find_one(
         {"$or": [{"email": credential}, {"username": credential}]},
-        {"password": 1, "password_hash": 1, "name": 1, "email": 1, "username": 1},
+        {
+            "password": 1,
+            "password_hash": 1,
+            "name": 1,
+            "email": 1,
+            "username": 1,
+            "department": 1,
+            "employee_id": 1,
+            "role": 1,
+        },
     )
     if not admin:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin credentials")
+    
     stored_password = admin.get("password") or admin.get("password_hash")
-    if stored_password != payload.password:
+    is_verified = False
+    if stored_password:
+        if stored_password.startswith("$2b$") or stored_password.startswith("$2a$") or len(stored_password) > 50:
+            from app.services.auth_service import AuthService
+            auth_service = AuthService()
+            try:
+                is_verified = auth_service.verify_password(payload.password, stored_password)
+            except Exception:
+                is_verified = (stored_password == payload.password)
+        else:
+            is_verified = (stored_password == payload.password)
+            
+    if not is_verified:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin credentials")
+        
     return AdminLoginResponse(
         authenticated=True,
         admin_id=str(admin.get("_id")),
         name=admin.get("name") or admin.get("username") or admin.get("email"),
         email=admin.get("email"),
+        username=admin.get("username"),
+        role=admin.get("role") or "admin",
+        department=admin.get("department"),
+        employee_id=admin.get("employee_id"),
     )
+
+
+@router.post("/admin/signup", summary="Register a new admin")
+def admin_signup(payload: AdminSignupRequest, services: Annotated[dict, Depends(get_services)]):
+    from app.services.auth_service import AuthService
+    auth_service = AuthService()
+    db = services["db"]
+    email = payload.email.strip().lower()
+    
+    if db.admins.find_one({"$or": [{"email": email}, {"username": email}]}):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin email already registered")
+        
+    hashed_password = auth_service.hash_password(payload.password)
+    new_admin = {
+        "name": payload.name.strip(),
+        "department": payload.department.strip(),
+        "employee_id": payload.employee_id.strip(),
+        "email": email,
+        "username": email,
+        "password": hashed_password,
+        "role": "admin",
+        "active": True
+    }
+    db.admins.insert_one(new_admin)
+    return {"message": "Admin signed up successfully"}
 
 
 @router.get("/tickets", response_model=list[TicketItem], summary="List admin ticket queue")
@@ -361,18 +465,36 @@ def list_tickets(
     limit: int = Query(default=50, ge=1, le=200),
     ticket_status: str | None = Query(default=None, alias="status"),
 ) -> list[TicketItem]:
-    return [
-        TicketItem(
-            ticket_id=services["tickets"].stringify_id(item),
-            question=item["question"],
-            email=item.get("email"),
-            status="pending" if item.get("status") == "open" else item.get("status", "pending"),
-            created_at=item["created_at"],
-            resolved_at=item.get("resolved_at"),
-            session_id=item.get("session_id"),
+    tickets = services["tickets"].list_tickets(limit, ticket_status)
+    items = []
+    for item in tickets:
+        ticket_id = services["tickets"].stringify_id(item)
+        answer = None
+        resolved_by = None
+        status_val = item.get("status", "pending")
+        if status_val == "open":
+            status_val = "pending"
+            
+        if status_val == "resolved":
+            resolution = services["db"].admin_resolutions.find_one({"ticket_id": ticket_id})
+            if resolution:
+                answer = resolution.get("answer")
+                resolved_by = resolution.get("resolved_by")
+                
+        items.append(
+            TicketItem(
+                ticket_id=ticket_id,
+                question=item["question"],
+                email=item.get("email"),
+                status=status_val,
+                created_at=item["created_at"],
+                resolved_at=item.get("resolved_at"),
+                session_id=item.get("session_id"),
+                answer=answer,
+                resolved_by=resolved_by,
+            )
         )
-        for item in services["tickets"].list_tickets(limit, ticket_status)
-    ]
+    return items
 
 
 @router.post(
@@ -512,18 +634,35 @@ def admin_overview(services: Annotated[dict, Depends(get_services)]) -> AdminOve
         )
         for item in services["analytics"].top_queries(5)
     ]
-    recent_tickets = [
-        TicketItem(
-            ticket_id=services["tickets"].stringify_id(item),
-            question=item["question"],
-            email=item.get("email"),
-            status="pending" if item.get("status") == "open" else item.get("status", "pending"),
-            created_at=item["created_at"],
-            resolved_at=item.get("resolved_at"),
-            session_id=item.get("session_id"),
+    recent_tickets_raw = services["tickets"].list_tickets(5)
+    recent_tickets = []
+    for item in recent_tickets_raw:
+        ticket_id = services["tickets"].stringify_id(item)
+        answer = None
+        resolved_by = None
+        status_val = item.get("status", "pending")
+        if status_val == "open":
+            status_val = "pending"
+            
+        if status_val == "resolved":
+            resolution = db.admin_resolutions.find_one({"ticket_id": ticket_id})
+            if resolution:
+                answer = resolution.get("answer")
+                resolved_by = resolution.get("resolved_by")
+                
+        recent_tickets.append(
+            TicketItem(
+                ticket_id=ticket_id,
+                question=item["question"],
+                email=item.get("email"),
+                status=status_val,
+                created_at=item["created_at"],
+                resolved_at=item.get("resolved_at"),
+                session_id=item.get("session_id"),
+                answer=answer,
+                resolved_by=resolved_by,
+            )
         )
-        for item in services["tickets"].list_tickets(5)
-    ]
     return AdminOverviewResponse(
         health=health_response,
         collections=collections,
@@ -558,9 +697,12 @@ def _cached_confidence(entry: dict, settings: Settings) -> ConfidenceResult:
 
 def _should_rewrite_query(quality) -> bool:
     return (
-        0.35 <= quality.combined_score <= 0.75
-        and quality.vector_score >= 0.45
-        and quality.context_keyword_score < 0.60
+        quality.weak_retrieval
+        and (
+            not quality.answerable
+            or quality.vector_score < 0.60
+            or quality.combined_score < 0.60
+        )
     )
 
 

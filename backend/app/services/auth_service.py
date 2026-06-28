@@ -10,7 +10,7 @@ from app.database.mongo_client import get_database
 logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(
-    schemes=["bcrypt"],
+    schemes=["pbkdf2_sha256", "bcrypt"],
     deprecated="auto"
 )
 

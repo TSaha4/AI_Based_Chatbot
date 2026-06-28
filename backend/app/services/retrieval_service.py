@@ -469,12 +469,21 @@ class RetrievalService:
         else:
             content = item.get("text") or item.get("content") or item.get("answer") or item.get("title") or ""
         preview = str(content).strip()
+        
+        source_doc_name = item.get("source_document")
+        if not source_doc_name:
+            if collection_name == "admin_resolutions":
+                source_doc_name = "Resolved Tickets"
+            else:
+                source_doc_name = item.get("title") or item.get("topic") or "Document"
+                
         return SourceDocument(
             id=str(item.get("_id") if isinstance(item.get("_id"), ObjectId) else item.get("_id")),
             collection=collection_name,
             topic=item.get("topic") or item.get("title"),
             score=float(item.get("score", 0.0)),
             preview=preview[:1200],
+            source_document=source_doc_name,
         )
 
     def _resolve_topic(self, processed: PreprocessedQuery, sources: List[SourceDocument]) -> Optional[str]:

@@ -12,6 +12,7 @@ class SourceDocument(BaseModel):
     preview: str
     vector_score: Optional[float] = None
     keyword_score: Optional[float] = None
+    source_document: Optional[str] = None
 
 
 class ConfidenceResult(BaseModel):
@@ -30,6 +31,7 @@ class ChatQueryResponse(BaseModel):
     cached: bool = False
     sources: List[SourceDocument] = Field(default_factory=list)
     session_id: Optional[str] = None
+    answer_generated: bool = True
 
 
 class TicketResponse(BaseModel):
@@ -69,6 +71,8 @@ class TicketItem(BaseModel):
     created_at: datetime
     resolved_at: Optional[datetime] = None
     session_id: Optional[str] = None
+    answer: Optional[str] = None
+    resolved_by: Optional[str] = None
 
 
 class AdminResolveTicketResponse(BaseModel):
@@ -90,6 +94,10 @@ class AdminLoginResponse(BaseModel):
     admin_id: Optional[str] = None
     username: Optional[str] = None
     role: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
 
 
 class UploadResponse(BaseModel):

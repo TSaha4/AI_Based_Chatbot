@@ -66,3 +66,11 @@ class AdminResolveTicketRequest(BaseModel):
 class AdminLoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=200)
     password: str = Field(..., min_length=1, max_length=200)
+
+
+class AdminSignupRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    department: str = Field(..., min_length=1, max_length=200)
+    employee_id: str = Field(..., min_length=1, max_length=200)
+    email: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200)
