@@ -226,9 +226,12 @@ class RetrievalService:
         source = self._to_source_document(collection_name, item)
         vector_score = float(item.get("score", 0.0))
         keyword_score, substantive_overlap = self._keyword_relevance(processed, source.preview)
+        # Make semantic similarity the dominant signal
+        vector_weight = max(self.settings.hybrid_vector_weight, 0.85)
+        keyword_weight = min(self.settings.hybrid_keyword_weight, 0.15)
         final_score = (
-            (vector_score * self.settings.hybrid_vector_weight)
-            + (keyword_score * self.settings.hybrid_keyword_weight)
+            (vector_score * vector_weight)
+            + (keyword_score * keyword_weight)
         )
         substantive_tokens = self._concept_tokens(processed)
         if substantive_tokens and substantive_overlap >= 1.0:
@@ -362,11 +365,11 @@ class RetrievalService:
         matched: List[SourceDocument] = []
         for source in sources:
             keyword_score = source.keyword_score or 0.0
-            semantic_match = (
-                (source.vector_score or 0.0) >= HIGH_VECTOR_FLOOR
-                and keyword_score >= MIN_SEMANTIC_KEYWORD_SCORE
-            )
-            if keyword_score < self.settings.min_answerability_keyword_score and not semantic_match:
+            vector_score = source.vector_score or 0.0
+            if (
+                keyword_score < self.settings.min_answerability_keyword_score
+                and vector_score < 0.75
+            ):
                 continue
             text = source.preview.lower()
             if not self._source_matches_concepts(text, processed, strong_concepts or concept_tokens):
@@ -378,7 +381,8 @@ class RetrievalService:
                     (item.keyword_score or 0.0 for item in sources if item.collection == "knowledge_chunks"),
                     default=0.0,
                 )
-                if keyword_score < max(0.55, kb_best):
+                vector_score = source.vector_score or 0.0
+                if keyword_score < 0.30 and vector_score < 0.78:
                     continue
             matched.append(source)
         return matched
