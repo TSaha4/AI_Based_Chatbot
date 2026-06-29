@@ -6,6 +6,8 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  useLocation,
+  useNavigate,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { useState } from "react";
@@ -137,24 +139,56 @@ function RootComponent() {
 function RootComponentInner() {
   const { queryClient } = Route.useRouteContext();
   const [collapsed, setCollapsed] = useState(false);
-  const [adminName, setAdminName] = useState("NTPC Administrator");
-
-  useEffect(() => {
-    const storedName = localStorage.getItem("admin_name");
-    if (storedName) {
-      setAdminName(storedName);
+  const [adminName, setAdminName] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("admin_name") || "NTPC Administrator";
     }
-  }, []);
+    return "NTPC Administrator";
+  });
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("admin_logged_in") === "true";
+    }
+    return false;
+  });
 
   useEffect(() => {
     const handleUpdate = () => {
       setAdminName(localStorage.getItem("admin_name") || "NTPC Administrator");
+      setIsLoggedIn(localStorage.getItem("admin_logged_in") === "true");
     };
     window.addEventListener("admin-profile-update", handleUpdate);
     return () => {
       window.removeEventListener("admin-profile-update", handleUpdate);
     };
   }, []);
+
+  useEffect(() => {
+    const isAuthPage = location.pathname === "/login" || location.pathname === "/signup";
+    if (!isLoggedIn && !isAuthPage) {
+      navigate({ to: "/login" });
+    } else if (isLoggedIn && isAuthPage) {
+      navigate({ to: "/" });
+    }
+  }, [isLoggedIn, location.pathname, navigate]);
+
+  const isAuthPage = location.pathname === "/login" || location.pathname === "/signup";
+
+  if (isAuthPage) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <div className="ntpc-shell-bg flex min-h-screen w-full bg-background items-center justify-center">
+          <main className="flex-1 flex justify-center items-center">
+            <Outlet />
+          </main>
+          <Toaster position="top-right" richColors />
+        </div>
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

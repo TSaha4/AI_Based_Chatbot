@@ -11,6 +11,8 @@ import {
   Sparkles,
   AlertTriangle,
   TrendingUp,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   LineChart,
@@ -26,7 +28,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { KpiCard, PageHeader, SectionCard, StatusBadge } from "@/components/admin-ui";
-import { fetchAdminOverview, BackendApiError, type AdminOverviewResponse } from "@/lib/backend-api";
+import { fetchAdminOverview, fetchTickets, BackendApiError, type AdminOverviewResponse, type TicketRecord } from "@/lib/backend-api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -131,33 +133,9 @@ function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4 sm:mt-6">
-        <SectionCard title="Recent Activity" className="lg:col-span-2">
-          <div className="overflow-x-auto -mx-4 sm:mx-0">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground border-b border-border">
-                  <th className="py-2 px-3 font-medium">Query</th>
-                  <th className="py-2 px-3 font-medium">Status</th>
-                  <th className="py-2 px-3 font-medium">Date</th>
-                  <th className="py-2 px-3 font-medium">Assigned</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(overview?.recent_tickets ?? []).map((r) => (
-                  <tr key={r.ticket_id} className="border-b border-border last:border-0 hover:bg-muted/40">
-                    <td className="py-2.5 px-3 text-foreground">{r.question}</td>
-                    <td className="py-2.5 px-3"><StatusBadge status={formatStatus(r.status)} /></td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{r.email ?? "Unassigned"}</td>
-                  </tr>
-                ))}
-                {(overview?.recent_tickets ?? []).length === 0 && (
-                  <tr><td colSpan={4} className="py-8 text-center text-sm text-muted-foreground">No live ticket activity yet.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
+        <div className="lg:col-span-2">
+          <ResolvedTicketsList />
+        </div>
 
         <div className="flex flex-col gap-4">
           <SectionCard title="System Health">
@@ -186,6 +164,112 @@ function DashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ResolvedTicketsList() {
+  const [resolvedTickets, setResolvedTickets] = useState<TicketRecord[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      fetchTickets(30, "resolved")
+        .then((data) => {
+          if (active) {
+            setResolvedTickets(data.filter(t => t.status.toLowerCase() === "resolved"));
+          }
+        })
+        .catch((err) => console.log("Mongo snapshot resolved tickets not loaded yet"));
+    };
+    load();
+    const id = setInterval(load, 15000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  const toggleExpand = (id: string) => {
+    setExpandedId(expandedId === id ? null : id);
+  };
+
+  return (
+    <SectionCard title="Resolved Questions" description="Browse and inspect resolved employee escalations.">
+      <div className="space-y-3">
+        {resolvedTickets.map((t) => {
+          const isExpanded = expandedId === t.ticket_id;
+          return (
+            <div
+              key={t.ticket_id}
+              className="rounded-lg border border-border bg-card hover:border-primary/20 transition-all overflow-hidden"
+            >
+              {/* Header / Collapsed view */}
+              <div
+                onClick={() => toggleExpand(t.ticket_id)}
+                className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-primary font-semibold">{t.ticket_id}</span>
+                    <span className="text-xs text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <p className="mt-1 text-sm font-medium text-foreground truncate">{t.question}</p>
+                </div>
+                <button className="text-muted-foreground ml-3 shrink-0 cursor-pointer">
+                  {isExpanded ? (
+                    <ChevronUp className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+
+              {/* Expanded details */}
+              {isExpanded && (
+                <div className="border-t border-border bg-muted/10 p-4 space-y-4 animate-soft-rise text-left">
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Full Question</h4>
+                    <p className="mt-1 text-sm text-foreground">{t.question}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Complete Answer</h4>
+                    <p className="mt-1 text-sm text-foreground bg-muted/40 p-3 rounded-md border border-border whitespace-pre-wrap leading-relaxed">
+                      {t.answer || "No logged answer details."}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2 border-t border-border/50 text-xs">
+                    <div>
+                      <span className="font-semibold text-muted-foreground block uppercase tracking-wider">User Email</span>
+                      <span className="text-foreground">{t.email || "No email provided"}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-muted-foreground block uppercase tracking-wider">Raised Time</span>
+                      <span className="text-foreground">{new Date(t.created_at).toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-muted-foreground block uppercase tracking-wider">Resolved Time</span>
+                      <span className="text-foreground">{t.resolved_at ? new Date(t.resolved_at).toLocaleString() : "N/A"}</span>
+                    </div>
+                  </div>
+                  {t.resolved_by && (
+                    <div className="pt-2 text-xs">
+                      <span className="font-semibold text-muted-foreground inline-block uppercase tracking-wider mr-1.5">Resolved By:</span>
+                      <span className="text-foreground font-medium">{t.resolved_by}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {resolvedTickets.length === 0 && (
+          <div className="py-8 text-center text-sm text-muted-foreground border border-dashed border-border rounded-lg bg-muted/10">
+            No resolved questions in MongoDB yet.
+          </div>
+        )}
+      </div>
+    </SectionCard>
   );
 }
 

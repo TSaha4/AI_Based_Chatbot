@@ -1,6 +1,6 @@
 import { Bell, Search, Menu, ChevronRight, User, Settings } from "lucide-react";
 import { useRouterState, Link } from "@tanstack/react-router";
-import { NtpcLogo } from "@/components/ntpc-logo";
+import { NtpcLogo } from "./components/ntpc-logo";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from "@/components/ui/sheet";
 import {

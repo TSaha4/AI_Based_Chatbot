@@ -23,34 +23,19 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { createSupportTicket, isValidEmail } from "@/lib/chat-api"
 import type { AnswerResult } from "@/lib/mock-answer"
 
-function ConfidenceMeter({ score }: { score: number }) {
-  const tone =
-    score >= 80
-      ? "bg-emerald-500"
-      : score >= 60
-        ? "bg-amber-500"
-        : "bg-destructive"
-  const label = score >= 80 ? "High" : score >= 60 ? "Moderate" : "Low"
+function ConfidenceBadge({ label }: { label: string }) {
+  const config =
+    label === "high"
+      ? { text: "High", dot: "bg-emerald-500", badge: "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" }
+      : label === "medium"
+        ? { text: "Relatable", dot: "bg-amber-500", badge: "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" }
+        : { text: "Not Found", dot: "bg-red-500", badge: "bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-300" }
 
   return (
-    <div className="flex w-full max-w-xs flex-col gap-1.5">
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-muted-foreground">
-          Confidence Score
-        </span>
-        <span className="font-semibold text-foreground">
-          {score}% &middot; {label}
-        </span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-        <motion.div
-          className={cn("h-full rounded-full", tone)}
-          initial={{ width: 0 }}
-          animate={{ width: `${score}%` }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-        />
-      </div>
-    </div>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", config.badge)}>
+      <span className={cn("size-1.5 rounded-full", config.dot)} />
+      {config.text}
+    </span>
   )
 }
 
@@ -256,30 +241,25 @@ function AnswerCard({
           {result.answer}
         </p>
 
-        <ConfidenceMeter score={result.confidence} />
+        <ConfidenceBadge label={result.confidence} />
 
         <Separator />
 
         <div className="flex flex-col gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Source Documents
+            Sources
           </span>
-          <ul className="flex flex-col gap-2">
-            {result.sources.map((src) => (
-              <li key={src.id + src.section}>
-                <div className="flex items-start gap-2.5 rounded-md border border-border bg-secondary/50 px-3 py-2.5">
+          <ul className="flex flex-wrap gap-2">
+            {Array.from(new Set(result.sources.map(src => src.title || src.section))).map((sourceName) => (
+              <li key={sourceName}>
+                <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-1.5">
                   <FileText
-                    className="mt-0.5 size-4 shrink-0 text-primary"
+                    className="size-3.5 text-primary shrink-0"
                     aria-hidden="true"
                   />
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {src.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {src.id} &middot; {src.section}
-                    </span>
-                  </div>
+                  <span className="text-xs font-medium text-foreground">
+                    {sourceName}
+                  </span>
                 </div>
               </li>
             ))}
@@ -364,7 +344,7 @@ function TicketCard({
           </div>
         </div>
 
-        <ConfidenceMeter score={result.confidence} />
+        <ConfidenceBadge label={result.confidence} />
 
         <Separator className="bg-amber-200 dark:bg-amber-500/20" />
 

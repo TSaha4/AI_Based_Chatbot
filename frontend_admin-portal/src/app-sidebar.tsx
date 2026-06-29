@@ -8,7 +8,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NtpcLogo } from "@/components/ntpc-logo";
+import { NtpcLogo } from "./components/ntpc-logo";
 
 export const adminNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },

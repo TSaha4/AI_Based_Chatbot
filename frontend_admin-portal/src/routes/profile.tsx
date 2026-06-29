@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { User, Mail, Shield, LogOut, CheckCircle } from "lucide-react";
+import { User, Mail, Building, Landmark, LogOut, CheckCircle } from "lucide-react";
 import { PageHeader, SectionCard } from "@/components/admin-ui";
 import { toast } from "sonner";
 import { loginAdmin } from "@/lib/backend-api";
@@ -12,16 +12,38 @@ export const Route = createFileRoute("/profile")({
 
 function ProfilePage() {
   const [signedOut, setSignedOut] = useState(() => {
-    return localStorage.getItem("admin_signed_out") === "true";
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("admin_signed_out") === "true";
+    }
+    return false;
   });
   const [email, setEmail] = useState(() => {
-    return localStorage.getItem("admin_email") || "admin@ntpc.local";
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("admin_email") || "admin@ntpc.local";
+    }
+    return "admin@ntpc.local";
   });
   const [name, setName] = useState(() => {
-    return localStorage.getItem("admin_name") || "NTPC Administrator";
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("admin_name") || "NTPC Administrator";
+    }
+    return "NTPC Administrator";
+  });
+  const [department, setDepartment] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("admin_department") || "General";
+    }
+    return "General";
+  });
+  const [employeeId, setEmployeeId] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("admin_employee_id") || "N/A";
+    }
+    return "N/A";
   });
 
   const handleSignOut = () => {
+    localStorage.removeItem("admin_logged_in");
     setSignedOut(true);
     localStorage.setItem("admin_signed_out", "true");
     toast.success("Successfully signed out");
@@ -44,13 +66,20 @@ function ProfilePage() {
       if (response.authenticated) {
         const newEmail = response.email || (username.includes("@") ? username : `${username}@ntpc.local`);
         const newName = response.name || username.split("@")[0].split(/[._-]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+        const newDept = response.department || "General";
+        const newEmpId = response.employee_id || "N/A";
         
         setEmail(newEmail);
         setName(newName);
+        setDepartment(newDept);
+        setEmployeeId(newEmpId);
         setSignedOut(false);
         localStorage.setItem("admin_email", newEmail);
         localStorage.setItem("admin_name", newName);
+        localStorage.setItem("admin_department", newDept);
+        localStorage.setItem("admin_employee_id", newEmpId);
         localStorage.setItem("admin_signed_out", "false");
+        localStorage.setItem("admin_logged_in", "true");
         toast.success(`Successfully signed in as ${newName}`);
         window.dispatchEvent(new Event("admin-profile-update"));
         return;
@@ -77,10 +106,15 @@ function ProfilePage() {
 
     setEmail(newEmail);
     setName(newName);
+    setDepartment("General");
+    setEmployeeId("N/A");
     setSignedOut(false);
     localStorage.setItem("admin_email", newEmail);
     localStorage.setItem("admin_name", newName);
+    localStorage.setItem("admin_department", "General");
+    localStorage.setItem("admin_employee_id", "N/A");
     localStorage.setItem("admin_signed_out", "false");
+    localStorage.setItem("admin_logged_in", "true");
     toast.success(`Successfully signed back in as ${newName}`);
     window.dispatchEvent(new Event("admin-profile-update"));
   };
@@ -88,6 +122,8 @@ function ProfilePage() {
   const handleUpdateInfo = () => {
     localStorage.setItem("admin_name", name);
     localStorage.setItem("admin_email", email);
+    localStorage.setItem("admin_department", department);
+    localStorage.setItem("admin_employee_id", employeeId);
     toast.success("Profile updated successfully");
     window.dispatchEvent(new Event("admin-profile-update"));
   };
@@ -149,7 +185,7 @@ function ProfilePage() {
         <div className="md:col-span-1 space-y-6">
           <SectionCard className="text-center">
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-primary text-2xl font-bold border border-primary/20">
-              AD
+              {name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "AD"}
             </div>
             <h3 className="mt-3 text-lg font-semibold text-foreground">{name}</h3>
             <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">System Admin</p>
@@ -189,10 +225,28 @@ function ProfilePage() {
               </div>
 
               <div className="flex items-center gap-3 p-3 rounded-md border border-border bg-muted/20">
-                <Shield className="h-5 w-5 text-primary shrink-0" />
+                <Building className="h-5 w-5 text-primary shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Role / Authority</p>
-                  <p className="mt-0.5 text-sm text-foreground">Super Administrator (All Access)</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Department</p>
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="mt-1 w-full text-sm bg-transparent border-b border-transparent focus:border-primary focus:outline-none py-0.5 text-foreground"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 p-3 rounded-md border border-border bg-muted/20">
+                <Landmark className="h-5 w-5 text-primary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Employee ID</p>
+                  <input
+                    type="text"
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    className="mt-1 w-full text-sm bg-transparent border-b border-transparent focus:border-primary focus:outline-none py-0.5 text-foreground"
+                  />
                 </div>
               </div>
             </div>

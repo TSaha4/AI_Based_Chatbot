@@ -8,6 +8,7 @@ type BackendSource = {
   topic?: string | null
   score: number
   preview: string
+  source_document?: string | null
 }
 
 type BackendConfidence = {
@@ -43,7 +44,7 @@ export function isValidEmail(email: string): boolean {
 function mapSources(sources: BackendSource[]): SourceDoc[] {
   return sources.map((source) => ({
     id: source.id,
-    title: source.topic || source.collection,
+    title: source.source_document || source.topic || source.collection,
     section: source.collection,
   }))
 }
@@ -71,9 +72,12 @@ export async function queryChatbot(input: {
     }
 
     const data = (await response.json()) as BackendChatResponse
-    const confidence = Math.round((data.confidence?.score ?? 0) * 100)
+    const confidence = data.confidence?.label ?? "low"
 
-    if (data.ticket_suggested || data.ticket_required) {
+    const fallbackMsg = "The knowledge base does not contain enough information to answer this question."
+    const isFallback = data.answer && (data.answer.includes(fallbackMsg) || data.answer.trim().startsWith(fallbackMsg))
+
+    if (data.ticket_suggested || data.ticket_required || isFallback) {
       return {
         kind: "ticket",
         question: input.query,

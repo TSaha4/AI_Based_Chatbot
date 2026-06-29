@@ -9,13 +9,13 @@ export type AnswerResult =
       kind: "answer"
       question: string
       answer: string
-      confidence: number
+      confidence: string
       sources: SourceDoc[]
     }
   | {
       kind: "ticket"
       question: string
-      confidence: number
+      confidence: string
       ticketId?: string | null
       status: string
       estimatedReview: string

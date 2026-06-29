@@ -34,6 +34,8 @@ export type AdminOverviewResponse = {
     status: string;
     created_at: string;
     session_id: string | null;
+    answer?: string | null;
+    resolved_by?: string | null;
   }>;
 };
 
@@ -42,6 +44,8 @@ export type AdminLoginResponse = {
   admin_id: string | null;
   name: string | null;
   email: string | null;
+  department?: string | null;
+  employee_id?: string | null;
 };
 
 export type TicketRecord = {
@@ -52,6 +56,8 @@ export type TicketRecord = {
   created_at: string;
   resolved_at?: string | null;
   session_id: string | null;
+  answer?: string | null;
+  resolved_by?: string | null;
 };
 
 export type AnalyticsRecord = {
@@ -111,8 +117,9 @@ export async function fetchAnalytics(limit = 20) {
   return readJson<AnalyticsRecord[]>(`/api/chat/analytics?limit=${limit}`);
 }
 
-export async function fetchTickets(limit = 20) {
-  return readJson<TicketRecord[]>(`/api/chat/tickets?limit=${limit}`);
+export async function fetchTickets(limit = 20, status?: string) {
+  const query = status ? `?status=${status}&limit=${limit}` : `?limit=${limit}`;
+  return readJson<TicketRecord[]>(`/api/chat/tickets${query}`);
 }
 
 export async function fetchPendingTickets(limit = 50) {
@@ -131,6 +138,27 @@ export async function loginAdmin(username: string, password: string) {
     throw new BackendApiError(`Login failed: ${response.status}`, response.status);
   }
   return response.json() as Promise<AdminLoginResponse>;
+}
+
+export async function signupAdmin(adminData: {
+  name: string;
+  department: string;
+  employee_id: string;
+  email: string;
+  password: string;
+}) {
+  const response = await fetch(`${DEFAULT_BASE_URL}/api/chat/admin/signup`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(adminData),
+  });
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new BackendApiError(errData.detail || `Signup failed: ${response.status}`, response.status);
+  }
+  return response.json();
 }
 
 export async function resolveTicket(ticketId: string, answer: string, resolvedBy = "admin") {
